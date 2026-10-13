@@ -11,7 +11,7 @@ Track product prices across e-commerce sites and get alerts on price drops. Buil
 - 📊 **Price History Charts** - Interactive graphs showing price trends over time
 - 🔐 **Google Authentication** - Secure sign-in powered by Clerk
 - 🔄 **Automated Daily Checks** - Vercel Cron checks prices automatically
-- 📧 **Email Alerts** - Get notified when prices drop via Resend
+- 📧 **Email Alerts** - Get notified when prices drop (Brevo, with Resend as fallback)
 
 ## 🛠️ Tech Stack
 
@@ -27,7 +27,7 @@ Track product prices across e-commerce sites and get alerts on price drops. Buil
   - Accessed with `@neondatabase/serverless`
 - **Clerk** - Authentication (Google sign-in, sessions, user management)
 - **Vercel Cron** - Scheduled daily price checks
-- **Resend** - Transactional emails
+- **Brevo + Resend** - Transactional emails (Brevo first, Resend fallback)
 - **shadcn/ui** - UI component library
 - **Recharts** - Interactive charts
 - **Tailwind CSS** - Styling
@@ -42,7 +42,7 @@ Before you begin, ensure you have:
 - A [Neon](https://neon.tech) account
 - A [Clerk](https://clerk.com) account
 - A [Firecrawl](https://firecrawl.dev) account
-- A [Resend](https://resend.com) account
+- A [Brevo](https://brevo.com) and/or [Resend](https://resend.com) account
 - A [Vercel](https://vercel.com) account (for deployment and cron)
 
 ## 🚀 Setup Instructions
@@ -79,11 +79,21 @@ The schema creates two tables:
 1. Sign up at [firecrawl.dev](https://firecrawl.dev)
 2. Go to dashboard and get your API key
 
-### 5. Resend Setup
+### 5. Email Setup (Brevo + Resend)
+
+Alerts are sent with **Brevo** first. If Brevo fails or is not configured, **Resend** is used. You can configure one or both.
+
+**Brevo (recommended):**
+
+1. Sign up at [brevo.com](https://brevo.com)
+2. Verify a sender email under **Senders, Domains & Dedicated IPs**
+3. Create an API key under **SMTP & API**
+
+**Resend (fallback):**
 
 1. Sign up at [resend.com](https://resend.com)
 2. Get your API key from the dashboard
-3. (Optional) Add and verify your domain for custom email addresses
+3. Without a verified domain, Resend only delivers to your own signup address
 
 ### 6. Environment Variables
 
@@ -100,7 +110,11 @@ CLERK_SECRET_KEY=your_clerk_secret_key
 # Firecrawl
 FIRECRAWL_API_KEY=your_firecrawl_api_key
 
-# Resend
+# Brevo (primary email provider)
+BREVO_API_KEY=your_brevo_api_key
+SENDER_EMAIL=your_verified_sender@example.com
+
+# Resend (fallback email provider)
 RESEND_API_KEY=your_resend_api_key
 RESEND_FROM_EMAIL=onboarding@resend.dev
 
@@ -147,6 +161,7 @@ Open [http://localhost:3000](http://localhost:3000)
    - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
    - `CLERK_SECRET_KEY`
    - `FIRECRAWL_API_KEY`
+   - `BREVO_API_KEY` and `SENDER_EMAIL`
    - `RESEND_API_KEY`
    - `RESEND_FROM_EMAIL`
    - `CRON_SECRET`
@@ -178,7 +193,7 @@ Open [http://localhost:3000](http://localhost:3000)
 2. **Hits the API endpoint** - `GET /api/cron/check-prices`, authenticated with `CRON_SECRET`
 3. **Firecrawl scrapes all products** - Updates prices for all tracked products
 4. **Updates database** - Saves new prices and adds to history if changed
-5. **Sends email alerts** - Looks up the user's email in Clerk and notifies them via Resend when the price drops
+5. **Sends email alerts** - Looks up the user's email in Clerk and notifies them (Brevo, falling back to Resend) when the price drops
 
 ### Why Firecrawl?
 
@@ -214,7 +229,7 @@ dealdrop/
 ├── lib/
 │   ├── db.js                           # Neon serverless client
 │   ├── firecrawl.js                    # Firecrawl API integration
-│   ├── email.js                        # Resend email templates
+│   ├── email.js                        # Email template + Brevo/Resend fallback
 │   └── utils.js                        # Utility functions
 ├── neon/
 │   └── schema.sql                      # Database tables & indexes
@@ -285,8 +300,10 @@ prompt: "Extract product name, price, currency, image URL, brand, rating, and av
 
 ### Email alerts not sending
 
+- Check the server log line `Email sent via brevo|resend` or the failure reason
+- Verify `BREVO_API_KEY` / `SENDER_EMAIL` (sender must be verified in Brevo)
 - Verify `RESEND_API_KEY` is correct
-- Check Resend dashboard for delivery logs
+- Check the Brevo or Resend dashboard for delivery logs
 - Ensure sender email is verified (for custom domains)
 
 ### Cron job not running
