@@ -1,9 +1,9 @@
 "use server";
 
-import { createClient } from "@/utils/supabase/server";
+import { auth } from "@clerk/nextjs/server";
+import { sql } from "@/lib/db";
 import { scrapeProduct } from "@/lib/firecrawl";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 
 export async function addProduct(formData) {
   const url = formData.get("url");
@@ -13,12 +13,9 @@ export async function addProduct(formData) {
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { userId } = await auth();
 
-    if (!user) {
+    if (!userId) {
       return { error: "Not authenticated" };
     }
 
@@ -34,48 +31,37 @@ export async function addProduct(formData) {
     const currency = productData.currencyCode || "USD";
 
     // Check if product exists to determine if it's an update
-    const { data: existingProduct } = await supabase
-      .from("products")
-      .select("id, current_price")
-      .eq("user_id", user.id)
-      .eq("url", url)
-      .single();
+    const [existingProduct] = await sql`
+      select id, current_price::float8 as current_price
+      from products
+      where user_id = ${userId} and url = ${url}
+    `;
 
     const isUpdate = !!existingProduct;
 
     // Upsert product (insert or update based on user_id + url)
-    const { data: product, error } = await supabase
-      .from("products")
-      .upsert(
-        {
-          user_id: user.id,
-          url,
-          name: productData.productName,
-          current_price: newPrice,
-          currency: currency,
-          image_url: productData.productImageUrl,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "user_id,url", // Unique constraint on user_id + url
-          ignoreDuplicates: false, // Always update if exists
-        }
-      )
-      .select()
-      .single();
-
-    if (error) throw error;
+    const [product] = await sql`
+      insert into products (user_id, url, name, current_price, currency, image_url)
+      values (${userId}, ${url}, ${productData.productName}, ${newPrice}, ${currency}, ${productData.productImageUrl})
+      on conflict (user_id, url) do update set
+        name = excluded.name,
+        current_price = excluded.current_price,
+        currency = excluded.currency,
+        image_url = excluded.image_url,
+        updated_at = now()
+      returning id, user_id, url, name, current_price::float8 as current_price,
+        currency, image_url, created_at, updated_at
+    `;
 
     // Add to price history if it's a new product OR price changed
     const shouldAddHistory =
       !isUpdate || existingProduct.current_price !== newPrice;
 
     if (shouldAddHistory) {
-      await supabase.from("price_history").insert({
-        product_id: product.id,
-        price: newPrice,
-        currency: currency,
-      });
+      await sql`
+        insert into price_history (product_id, price, currency)
+        values (${product.id}, ${newPrice}, ${currency})
+      `;
     }
 
     revalidatePath("/");
@@ -94,13 +80,15 @@ export async function addProduct(formData) {
 
 export async function deleteProduct(productId) {
   try {
-    const supabase = await createClient();
-    const { error } = await supabase
-      .from("products")
-      .delete()
-      .eq("id", productId);
+    const { userId } = await auth();
 
-    if (error) throw error;
+    if (!userId) {
+      return { error: "Not authenticated" };
+    }
+
+    await sql`
+      delete from products where id = ${productId} and user_id = ${userId}
+    `;
 
     revalidatePath("/");
     return { success: true };
@@ -111,14 +99,19 @@ export async function deleteProduct(productId) {
 
 export async function getProducts() {
   try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { userId } = await auth();
 
-    if (error) throw error;
-    return data || [];
+    if (!userId) {
+      return [];
+    }
+
+    return await sql`
+      select id, user_id, url, name, current_price::float8 as current_price,
+        currency, image_url, created_at, updated_at
+      from products
+      where user_id = ${userId}
+      order by created_at desc
+    `;
   } catch (error) {
     console.error("Get products error:", error);
     return [];
@@ -127,24 +120,21 @@ export async function getProducts() {
 
 export async function getPriceHistory(productId) {
   try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("price_history")
-      .select("*")
-      .eq("product_id", productId)
-      .order("checked_at", { ascending: true });
+    const { userId } = await auth();
 
-    if (error) throw error;
-    return data || [];
+    if (!userId) {
+      return [];
+    }
+
+    return await sql`
+      select ph.id, ph.product_id, ph.price::float8 as price, ph.currency, ph.checked_at
+      from price_history ph
+      join products p on p.id = ph.product_id
+      where ph.product_id = ${productId} and p.user_id = ${userId}
+      order by ph.checked_at asc
+    `;
   } catch (error) {
     console.error("Get price history error:", error);
     return [];
   }
-}
-
-export async function signOut() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
-  revalidatePath("/");
-  redirect("/");
 }

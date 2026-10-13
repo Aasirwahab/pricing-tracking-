@@ -1,9 +1,19 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { clerkClient } from "@clerk/nextjs/server";
+import { sql } from "@/lib/db";
 import { scrapeProduct } from "@/lib/firecrawl";
 import { sendPriceDropAlert } from "@/lib/email";
 
-export async function POST(request) {
+async function getUserEmail(userId) {
+  const client = await clerkClient();
+  const user = await client.users.getUser(userId);
+  return user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)
+    ?.emailAddress;
+}
+
+// Vercel Cron calls this with GET and `Authorization: Bearer $CRON_SECRET`.
+// POST is kept so the endpoint can still be triggered manually (curl).
+async function handler(request) {
   try {
     const authHeader = request.headers.get("authorization");
     const cronSecret = process.env.CRON_SECRET;
@@ -12,17 +22,11 @@ export async function POST(request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Use service role to bypass RLS
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
-
-    const { data: products, error: productsError } = await supabase
-      .from("products")
-      .select("*");
-
-    if (productsError) throw productsError;
+    const products = await sql`
+      select id, user_id, url, name, current_price::float8 as current_price,
+        currency, image_url
+      from products
+    `;
 
     console.log(`Found ${products.length} products to check`);
 
@@ -44,36 +48,33 @@ export async function POST(request) {
         }
 
         const newPrice = parseFloat(productData.currentPrice);
-        const oldPrice = parseFloat(product.current_price);
+        const oldPrice = product.current_price;
+        const currency = productData.currencyCode || product.currency;
 
-        await supabase
-          .from("products")
-          .update({
-            current_price: newPrice,
-            currency: productData.currencyCode || product.currency,
-            name: productData.productName || product.name,
-            image_url: productData.productImageUrl || product.image_url,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", product.id);
+        await sql`
+          update products set
+            current_price = ${newPrice},
+            currency = ${currency},
+            name = ${productData.productName || product.name},
+            image_url = ${productData.productImageUrl || product.image_url},
+            updated_at = now()
+          where id = ${product.id}
+        `;
 
         if (oldPrice !== newPrice) {
-          await supabase.from("price_history").insert({
-            product_id: product.id,
-            price: newPrice,
-            currency: productData.currencyCode || product.currency,
-          });
+          await sql`
+            insert into price_history (product_id, price, currency)
+            values (${product.id}, ${newPrice}, ${currency})
+          `;
 
           results.priceChanges++;
 
           if (newPrice < oldPrice) {
-            const {
-              data: { user },
-            } = await supabase.auth.admin.getUserById(product.user_id);
+            const email = await getUserEmail(product.user_id);
 
-            if (user?.email) {
+            if (email) {
               const emailResult = await sendPriceDropAlert(
-                user.email,
+                email,
                 product,
                 oldPrice,
                 newPrice
@@ -104,8 +105,5 @@ export async function POST(request) {
   }
 }
 
-export async function GET() {
-  return NextResponse.json({
-    message: "Price check endpoint is working. Use POST to trigger.",
-  });
-}
+export const GET = handler;
+export const POST = handler;

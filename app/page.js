@@ -1,4 +1,4 @@
-import { createClient } from "@/utils/supabase/server";
+import { auth } from "@clerk/nextjs/server";
 import { getProducts } from "./actions";
 import AddProductForm from "@/components/AddProductForm";
 import ProductCard from "@/components/ProductCard";
@@ -7,10 +7,8 @@ import AuthButton from "@/components/AuthButton";
 import Image from "next/image";
 
 export default async function Home() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { userId } = await auth();
+  const user = userId ? { id: userId } : null;
 
   const products = user ? await getProducts() : [];
 
