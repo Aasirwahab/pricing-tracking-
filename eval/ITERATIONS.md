@@ -79,3 +79,34 @@ save only ~$0.001 per 1,000 pairs. Revisit with the larger held-out set.
   next credit cycle.
 - Shoes remain hard for every method (62.5% best): listing names usually omit the colorway, so
   identity needs the style code (e.g. `CW2288-111`) or the selected color from the page itself.
+
+## v3: a real-world miss (Casio A500WA-7, Sri Lanka)
+
+A user searched the A500WA-7 with "Shops in: Sri Lanka" and got "no shops in Sri Lanka", while Google
+showed Sri Lankan shops. The stored decision trail showed three separate causes:
+
+| Finding | Cause | Fix |
+|---|---|---|
+| Google's top result (mzwatcheslk.com) was **not** a miss | It sells the **A500WA-1** (black), not the -7 (silver); Google itself showed "Missing: 7df" | None: correctly rejected (title 0.06) |
+| ubuy.com.lk A500WA-7 never reached the pipeline | "Shops in" only biases search; a plain and a "... Sri Lanka" search both missed it | Add a site-restricted search (`Casio A500WA-7 site:lk`, brand + model code only). Probe: 10/10 Sri Lankan results, the A500WA-7 page first, ~2 credits |
+| watchfactory.com.au "A500WA-7D" rejected (0.37) | Regional suffix again | Give Jev a fact computed by code: does the text contain the tracked model codes (punctuation ignored, suffixes allowed)? |
+| ubuy page read as "no price" | Price is filled in by JavaScript per visitor country; not in the HTML, JSON-LD, or meta tags, and a Sri Lanka scrape location returned an empty page | Show it under "Also listed (price not shown to us)" when the title carries the exact model code and Jev leans "same" |
+
+### Does the model-code fact help Jev?
+
+Jev is not deterministic, so before trusting a 2-pair change, both versions were run 3 times on the same 52 pairs:
+
+| | Accuracy (3 runs) | AUC | Brier |
+|---|---|---|---|
+| Without code fact | 86.5 / 88.5 / 88.5 | 0.959-0.961 | 0.084-0.085 |
+| With code fact | 88.5 / 86.5 / 88.5 | 0.962-0.966 | 0.091-0.094 |
+
+- **Run-to-run noise is about one pair (±2% accuracy)** and up to 0.13 on a single pair's probability.
+  Any accuracy difference under ~2 pairs on this set is noise.
+- On the 52 pairs the fact is roughly neutral: slightly better ranking (AUC), slightly worse calibration
+  (Brier). On the real failure it moved "A500WA-7D" from 0.37 to 0.45-0.51, still borderline.
+- Kept because it fixes an observed production case and is cheap; flagged for the larger held-out set.
+
+**Lesson:** the biggest gap was **search coverage**, not matching. A shop the pipeline never sees can't
+be matched, which the identity eval (which only scores candidates that were found) cannot reveal. A
+recall eval ("for products with known local shops, how many does discovery find?") is the next measurement.

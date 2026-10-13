@@ -10,10 +10,10 @@ _Generated 2026-10-13 by `eval/run.mjs`._
 | always-same | 78.8% | 78.8% | 100.0% | 0.882 | 0.500 | $0 | <1 ms |
 | token-jaccard | 65.4% | 76.7% | 80.5% | 0.786 | 0.774 | $0 | <1 ms |
 | model-number | 88.5% | 87.2% | 100.0% | 0.932 | 0.727 | $0 | <1 ms |
-| embeddings | 75.0% | 80.4% | 90.2% | 0.851 | 0.863 | $0.0003 | 4704 ms |
-| llm-judge | 86.5% | 92.5% | 90.2% | 0.914 | 0.815 | $0.0198 | 1216 ms |
-| jev | 88.5% | 94.9% | 90.2% | 0.925 | 0.961 | $0.0101 | 635 ms |
-| cascade | 88.5% | 94.9% | 90.2% | 0.925 | 0.966 | $0.0091 | 635 ms |
+| embeddings | 75.0% | 80.4% | 90.2% | 0.851 | 0.863 | $0.0003 | 5406 ms |
+| llm-judge | 86.5% | 92.5% | 90.2% | 0.914 | 0.815 | $0.0198 | 1672 ms |
+| jev | 84.6% | 94.6% | 85.4% | 0.897 | 0.960 | $0.0110 | 635 ms |
+| cascade | 84.6% | 94.6% | 85.4% | 0.897 | 0.967 | $0.0100 | 635 ms |
 
 - **always-same** is the floor: 78.8% of pairs are "same", so accuracy alone flatters every method. Precision (how often a "same" verdict is right) and F1/AUC are the fairer comparison.
 - 28 pairs were labeled **unclear** (the text omits the deciding variant) and are excluded.
@@ -30,20 +30,20 @@ _Generated 2026-10-13 by `eval/run.mjs`._
 | model-number | 100.0% | 92.3% | 78.6% | 75.0% |
 | embeddings | 70.6% | 92.3% | 78.6% | 50.0% |
 | llm-judge | 88.2% | 100.0% | 85.7% | 62.5% |
-| jev | 82.4% | 100.0% | 100.0% | 62.5% |
-| cascade | 82.4% | 100.0% | 100.0% | 62.5% |
+| jev | 82.4% | 100.0% | 92.9% | 50.0% |
+| cascade | 82.4% | 100.0% | 92.9% | 50.0% |
 
 ## Jev calibration
 
-When Jev says "X% likely the same product", how often is it actually the same? (Brier score: 0.085, lower is better.)
+When Jev says "X% likely the same product", how often is it actually the same? (Brier score: 0.093, lower is better.)
 
 | Predicted range | Pairs | Mean predicted | Actually same |
 |---|---|---|---|
-| 0.0-0.2 | 7 | 5.7% | 0.0% |
-| 0.2-0.4 | 4 | 27.0% | 50.0% |
-| 0.4-0.6 | 7 | 51.6% | 85.7% |
-| 0.6-0.8 | 8 | 71.0% | 87.5% |
-| 0.8-1.0 | 26 | 89.5% | 100.0% |
+| 0.0-0.2 | 9 | 8.9% | 22.2% |
+| 0.2-0.4 | 3 | 30.7% | 33.3% |
+| 0.4-0.6 | 6 | 50.2% | 66.7% |
+| 0.6-0.8 | 7 | 66.4% | 100.0% |
+| 0.8-1.0 | 27 | 88.9% | 100.0% |
 
 ## Models
 

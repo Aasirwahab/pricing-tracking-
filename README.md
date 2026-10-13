@@ -214,12 +214,13 @@ Open [http://localhost:3000](http://localhost:3000)
 ### Find Best Prices: How It Works
 
 1. **Search query**: a cheap LLM turns a long marketplace title into brand + model + variant (e.g. `Casio MTP-B145D-2A2V blue dial watch`)
-2. **Web search** in the user's "Shops in" country (Firecrawl search, 10 results)
+2. **Web search, up to three queries** for the user's "Shops in" country: site-restricted (`Casio A500WA-7 site:lk`), with the country name, and plain, merged with local results first (~2 credits each)
 3. **One Jev call pre-checks every result**: "is this a shop page?" and "does the title look like the same product?". Reading a page costs ~5 Firecrawl credits and search ~2, so obvious non-shops (YouTube, Reddit, category pages) and other models are skipped before any page is read
 4. **Read the 6 most promising pages** in parallel (25s timeout each)
-5. **One Jev call checks every page**: exactly the same product? Regional/packaging suffixes (e.g. Casio `-2A2VDF` vs `-2A2V`) are the same product; different colors, models, accessories, or bundles are not
+5. **One Jev call checks every page**: exactly the same product? Jev also gets a fact computed by code: whether the page name contains the tracked model codes (`A500WA-7` is found in `A500WA-7DF` but not in `A500WA-1`). Regional/packaging suffixes (e.g. Casio `-2A2VDF` vs `-2A2V`) are the same product; different colors, models, accessories, or bundles are not
 6. **Rank** matches by price in the user's currency and show the top 5
-7. **Cached for 24 hours** per product and country. Every candidate, including rejected ones with Jev's probabilities, is stored in `discoveries` as data for the matching eval
+7. **Unreadable local shops are still shown**: if a local shop's title carries the exact model code but its price can't be read (JavaScript or per-country pricing, bot blocking), it is listed under "Also listed (price not shown to us)" with a link
+8. **Cached for 24 hours** per product and country. Every candidate, including rejected ones with Jev's probabilities, is stored in `discoveries` as data for the matching eval
 
 Measured on a real search (Casio MTP-B145D-2A2V, Sri Lanka): 6 correct shops across LKR, INR, USD, and GBP, 32 Firecrawl credits, ~48s, $0.00026 in AI calls.
 ### Pricing Analysis: How It Works

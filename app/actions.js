@@ -14,6 +14,8 @@ import { findCountry, isLocalShop } from "@/lib/countries";
 const DISCOVERY_CACHE_HOURS = 24;
 const TOP_SHOPS = 5;
 const TOP_INTERNATIONAL_SHOPS = 3;
+// Title-only evidence, so the bar is higher than for shops whose page was read.
+const UNPRICED_TITLE_MATCH = 0.8;
 import { revalidatePath } from "next/cache";
 
 function shopFromUrl(url) {
@@ -316,6 +318,22 @@ function shopsFromDiscovery(discovery, { country, currency, fx, trackedUrls }) {
     productId: discovery.product_id ?? null,
     shops: matches.filter((s) => s.local),
     internationalShops: matches.filter((s) => !s.local),
+    // Local shops whose title clearly names this product but whose price can't be
+    // read (loaded by JavaScript, geo-priced, or blocked). Shown, not ranked.
+    unpricedShops: discovery.results
+      .filter(
+        (c) =>
+          c.status === "read_failed" &&
+          // Exact model code in the title is hard evidence, so Jev only needs to
+          // lean "same"; without a code, require strong agreement.
+          (c.titleCodeMatch === true
+            ? c.titleSameP >= 0.5
+            : c.titleSameP >= UNPRICED_TITLE_MATCH) &&
+          c.shopP >= UNPRICED_TITLE_MATCH &&
+          isLocalShop(country, { shop: c.shop })
+      )
+      .slice(0, TOP_INTERNATIONAL_SHOPS)
+      .map((c) => ({ url: c.url, shop: c.shop, title: c.title })),
     limits: { local: TOP_SHOPS, international: TOP_INTERNATIONAL_SHOPS },
     currency,
     country: country.name,
@@ -371,6 +389,7 @@ export async function findShops(productId) {
         country: country.code || undefined,
         location: country.code ? country.name : undefined,
         localTld: country.tld,
+        siteSearch: country.siteSearch !== false,
         excludeUrls: listings.map((l) => l.url),
       });
 
@@ -431,6 +450,7 @@ export async function searchByName(name) {
         country: country.code || undefined,
         location: country.code ? country.name : undefined,
         localTld: country.tld,
+        siteSearch: country.siteSearch !== false,
       });
 
       [discovery] = await sql`

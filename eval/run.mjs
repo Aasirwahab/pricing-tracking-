@@ -20,7 +20,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { decide, JEV_MODEL } from "../lib/jev.js";
 import { generateText, DEFAULT_MODEL } from "../lib/llm.js";
-import { SAME_PRODUCT } from "../lib/discover.js";
+import { SAME_PRODUCT, CODE_FACT_NOTE, containsModelCodes } from "../lib/discover.js";
 
 const data = (f) => new URL(`./data/${f}`, import.meta.url);
 const EMBEDDING_MODEL = "openai/text-embedding-3-small";
@@ -45,14 +45,11 @@ function tokenJaccard(p) {
   return inter / (a.size + b.size - inter);
 }
 
-const squash = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-// Model-like codes: tokens with both letters and digits (A159W-N1, SRPD55, WH-1000XM5, 128GB).
-const modelCodes = (s) => s.split(/\s+/).map(squash).filter((t) => /[a-z]/.test(t) && /\d/.test(t) && t.length >= 3);
+// Same code check production gives Jev (lib/discover.js); word overlap when there is no code.
 function modelNumber(p) {
-  const codes = modelCodes(p.productName);
-  if (codes.length === 0) return tokenJaccard(p) >= 0.5 ? 1 : 0;
-  const text = squash(p.candidate);
-  return codes.every((c) => text.includes(c)) ? 1 : 0;
+  const match = containsModelCodes(p.productName, p.candidate);
+  if (match === null) return tokenJaccard(p) >= 0.5 ? 1 : 0;
+  return match ? 1 : 0;
 }
 
 async function embeddingScores(items) {
@@ -108,7 +105,15 @@ async function jevScores(items) {
   for (const productId of products) {
     const idx = items.map((p, i) => [p, i]).filter(([p]) => p.productId === productId);
     const { answers, usage, latencyMs } = await decide(
-      { tracked_product: idx[0][0].productName, candidates: idx.map(([p], k) => ({ id: `c${k}`, name: p.candidate })) },
+      {
+        tracked_product: idx[0][0].productName,
+        note: CODE_FACT_NOTE,
+        candidates: idx.map(([p], k) => ({
+          id: `c${k}`,
+          name: p.candidate,
+          contains_tracked_model_codes: containsModelCodes(p.productName, p.candidate),
+        })),
+      },
       Object.fromEntries(idx.map((_, k) => [`c${k}`, {
         type: "noul",
         instructions: `Is candidate c${k} exactly the same product as the tracked product?`,

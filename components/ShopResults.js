@@ -136,13 +136,40 @@ export default function ShopResults({ result, onTracked }) {
 
       {shops.length === 0 ? (
         <p className="text-sm text-gray-500">
-          No shops in {country} with this exact product were found.
-          {internationalShops.length > 0
-            ? " International shops are listed below."
+          No shops in {country} with a readable price for this exact product.
+          {result.unpricedShops?.length > 0 || internationalShops.length > 0
+            ? " See below."
             : " Try \"Shops in: Worldwide\" at the top."}
         </p>
       ) : (
         <ol className="divide-y rounded-md border bg-white">{shops.map(shopRow)}</ol>
+      )}
+
+      {result.unpricedShops?.length > 0 && (
+        <div className="rounded-md border border-dashed bg-white p-2">
+          <p className="text-sm font-medium text-gray-700">
+            Also listed{isWorldwide ? "" : ` in ${country}`}
+            <span className="ml-1 font-normal text-gray-500">
+              · price not shown to us (the shop loads or hides it); check on the shop page
+            </span>
+          </p>
+          <ul className="mt-1 space-y-1">
+            {result.unpricedShops.map((s) => (
+              <li key={s.url} className="flex items-center gap-2 text-sm">
+                <span className="font-medium text-gray-900">{s.shop}</span>
+                <span className="truncate text-gray-500">{s.title}</span>
+                <a
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-auto shrink-0 text-orange-600 hover:underline"
+                >
+                  View
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {internationalShops.length > 0 && (
