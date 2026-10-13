@@ -8,19 +8,21 @@ import ShopResults, { SearchingNotice } from "./ShopResults";
 // are only used to refetch when the user changes those settings.
 export default function FindShops({ productId, currency, shopCountry }) {
   // Results are stored with the settings they were fetched for; a mismatch means "loading".
-  const key = `${productId}|${currency}|${shopCountry}`;
+  // `refreshes` is part of the key so "Search again" also shows the loading state.
+  const [refreshes, setRefreshes] = useState(0);
+  const key = `${productId}|${currency}|${shopCountry}|${refreshes}`;
   const [fetched, setFetched] = useState(null);
   const result = fetched?.key === key ? fetched.data : null;
 
   useEffect(() => {
     let cancelled = false;
-    findShops(productId).then((data) => {
+    findShops(productId, { refresh: refreshes > 0 }).then((data) => {
       if (!cancelled) setFetched({ key, data });
     });
     return () => {
       cancelled = true;
     };
-  }, [key, productId]);
+  }, [key, productId, refreshes]);
 
   if (!result) return <SearchingNotice />;
 
@@ -28,5 +30,11 @@ export default function FindShops({ productId, currency, shopCountry }) {
     return <p className="py-2 text-sm text-gray-500">{result.error}</p>;
   }
 
-  return <ShopResults key={key} result={result} />;
+  return (
+    <ShopResults
+      key={key}
+      result={result}
+      onRefresh={() => setRefreshes((n) => n + 1)}
+    />
+  );
 }

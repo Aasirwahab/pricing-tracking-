@@ -66,6 +66,8 @@ create table discoveries (
   country text,
   query text not null,
   results jsonb not null,
+  -- DISCOVERY_VERSION in lib/discover.js; caches from older versions are ignored
+  pipeline_version integer not null default 1,
   created_at timestamptz not null default now()
 );
 

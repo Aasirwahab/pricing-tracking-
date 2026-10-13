@@ -197,7 +197,17 @@ export default function AddProductForm({ user }) {
       )}
 
       {searchResult && !searchResult.error && (
-        <ShopResults key={searchResult.discoveryId} result={searchResult} />
+        <ShopResults
+          key={searchResult.discoveryId}
+          result={searchResult}
+          onRefresh={async () => {
+            const name = searchResult.searchName;
+            setSearchResult(null);
+            setLoading(true);
+            setSearchResult(await searchByName(name, { refresh: true }));
+            setLoading(false);
+          }}
+        />
       )}
     </div>
   );

@@ -6,7 +6,7 @@ import { formatPrice } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import ConditionBadge from "./ConditionBadge";
-import { Check, ExternalLink, Loader2, Plus } from "lucide-react";
+import { Check, ExternalLink, Loader2, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 export function SearchingNotice({ label = "Searching shops for the same product..." }) {
@@ -26,7 +26,8 @@ export function SearchingNotice({ label = "Searching shops for the same product.
 
 // The list of shops found by a search (findShops or searchByName). Tracking a shop
 // marks it in place; `onTracked` is called with the result of trackShop.
-export default function ShopResults({ result, onTracked }) {
+// `onRefresh` runs a fresh search instead of reusing the saved one.
+export default function ShopResults({ result, onTracked, onRefresh }) {
   const [trackedUrls, setTrackedUrls] = useState([]);
   const [trackingUrl, setTrackingUrl] = useState(null);
   // New and refurbished/used prices aren't comparable, so new-only is the default.
@@ -117,8 +118,19 @@ export default function ShopResults({ result, onTracked }) {
         <h4 className="text-sm font-semibold text-gray-800">
           {isWorldwide ? "Best prices found · Worldwide" : `Shops in ${country}`}
         </h4>
-        <span className="text-xs text-gray-400">
-          searched {new Date(searchedAt).toLocaleDateString("en-US")}
+        <span className="flex items-center gap-2 text-xs text-gray-400">
+          searched {new Date(searchedAt).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" })}
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              title="Run a fresh search instead of the saved one (takes about a minute)"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-orange-600 hover:bg-orange-50"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Search again
+            </button>
+          )}
         </span>
       </div>
 

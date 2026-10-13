@@ -6,7 +6,7 @@ import { scrapeProduct } from "@/lib/firecrawl";
 import { convert, getRates } from "@/lib/currency";
 import { analyzePrices } from "@/lib/analysis";
 import { getInsight } from "@/lib/insights";
-import { discoverShops } from "@/lib/discover";
+import { DISCOVERY_VERSION, discoverShops } from "@/lib/discover";
 import { identifyProduct } from "@/lib/identify";
 import { findCountry, isLocalShop } from "@/lib/countries";
 
@@ -381,7 +381,8 @@ async function searchContext() {
 // Finds the same product at other shops in the user's "Shops in" country and
 // returns the cheapest few in the user's currency. Every candidate (including
 // rejected ones and Jev's probabilities) is stored for the matching eval.
-export async function findShops(productId) {
+// `refresh: true` skips the cache and runs a new search (costs ~35 credits).
+export async function findShops(productId, { refresh = false } = {}) {
   try {
     const { userId } = await auth();
 
@@ -405,6 +406,8 @@ export async function findShops(productId) {
       select id, product_id, results, created_at from discoveries
       where product_id = ${productId}
         and country is not distinct from ${country.code || null}
+        and pipeline_version = ${DISCOVERY_VERSION}
+        and not ${refresh}
         and created_at > now() - make_interval(hours => ${DISCOVERY_CACHE_HOURS})
       order by created_at desc
       limit 1
@@ -422,8 +425,8 @@ export async function findShops(productId) {
       });
 
       [discovery] = await sql`
-        insert into discoveries (product_id, user_id, country, query, results)
-        values (${productId}, ${userId}, ${country.code || null}, ${query}, ${JSON.stringify(candidates)})
+        insert into discoveries (product_id, user_id, country, query, results, pipeline_version)
+        values (${productId}, ${userId}, ${country.code || null}, ${query}, ${JSON.stringify(candidates)}, ${DISCOVERY_VERSION})
         returning id, product_id, results, created_at
       `;
     }
@@ -446,7 +449,7 @@ export async function findShops(productId) {
 // Same search as findShops, but starting from a product name (typed, or confirmed
 // after a screenshot). No product exists yet: it is created when the user tracks
 // the first shop.
-export async function searchByName(name) {
+export async function searchByName(name, { refresh = false } = {}) {
   try {
     const { userId } = await auth();
 
@@ -466,6 +469,8 @@ export async function searchByName(name) {
       where user_id = ${userId}
         and lower(search_name) = lower(${searchName})
         and country is not distinct from ${country.code || null}
+        and pipeline_version = ${DISCOVERY_VERSION}
+        and not ${refresh}
         and created_at > now() - make_interval(hours => ${DISCOVERY_CACHE_HOURS})
       order by created_at desc
       limit 1
@@ -482,8 +487,8 @@ export async function searchByName(name) {
       });
 
       [discovery] = await sql`
-        insert into discoveries (user_id, search_name, country, query, results)
-        values (${userId}, ${searchName}, ${country.code || null}, ${query}, ${JSON.stringify(candidates)})
+        insert into discoveries (user_id, search_name, country, query, results, pipeline_version)
+        values (${userId}, ${searchName}, ${country.code || null}, ${query}, ${JSON.stringify(candidates)}, ${DISCOVERY_VERSION})
         returning id, product_id, results, created_at
       `;
     }
@@ -495,6 +500,7 @@ export async function searchByName(name) {
     return {
       ...shopsFromDiscovery(discovery, { country, currency, fx, trackedUrls }),
       cached,
+      searchName,
     };
   } catch (error) {
     console.error("Search by name error:", error);
