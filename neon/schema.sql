@@ -43,6 +43,8 @@ create table price_history (
 create table user_settings (
   user_id text primary key,
   preferred_currency text not null default 'USD',
+  -- "Shops in" country code (null = worldwide)
+  shop_country text,
   updated_at timestamptz not null default now()
 );
 
@@ -54,7 +56,44 @@ create table exchange_rates (
   fetched_at timestamptz not null default now()
 );
 
+-- One "Find best prices" search. Searches by name or screenshot start without a
+-- product (product_id is set when the user tracks the first shop).
+create table discoveries (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid references products(id) on delete cascade,
+  user_id text not null,
+  search_name text,
+  country text,
+  query text not null,
+  results jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+-- Every Jev / LLM call, for cost and latency reporting
+create table ai_calls (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null,
+  model text not null,
+  latency_ms integer not null,
+  input_tokens integer,
+  output_tokens integer,
+  cost_usd numeric(12,8),
+  ok boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+-- Cached LLM summaries of pricing analyses, keyed by a hash of their inputs
+create table price_insights (
+  input_hash text primary key,
+  summary text not null,
+  model text not null,
+  created_at timestamptz not null default now()
+);
+
 create index products_user_id_idx on products(user_id);
+create index discoveries_product_created_idx on discoveries(product_id, created_at desc);
+create index discoveries_user_search_idx on discoveries(user_id, lower(search_name), created_at desc);
+create index ai_calls_kind_created_idx on ai_calls(kind, created_at desc);
 create index listings_product_id_idx on listings(product_id);
 create index price_history_listing_id_idx on price_history(listing_id);
 create index price_history_checked_at_idx on price_history(checked_at desc);

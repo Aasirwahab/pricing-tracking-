@@ -8,6 +8,7 @@ Track product prices across e-commerce sites and get alerts on price drops. Buil
 ## 🎯 Features
 
 - 🔍 **Track Any Product** - Works with Amazon, Zara, Walmart, and more
+- ✍️📷 **Add by Link, Name, or Screenshot** - Paste a link, type a product name, or upload/paste a screenshot. A vision model identifies the product, you confirm the name, then DealDrop finds shops for it
 - 🔎 **Find Best Prices** - One click searches the web for the same product in your chosen country, checks each shop sells the exact model (Jev), and shows the 5 cheapest with a match score. Track any of them in one click
 - 🏪 **Compare Shops** - Add several shops' links to one product; listings are sorted cheapest first
 - 💱 **Any Currency** - Each shop keeps its original price; everything is also shown in your chosen currency (166 currencies, daily rates)
@@ -31,6 +32,7 @@ Track product prices across e-commerce sites and get alerts on price drops. Buil
   - Scales to zero when idle, wakes on the next query
   - Accessed with `@neondatabase/serverless`
 - **Gemini 2.5 Flash-Lite via OpenRouter** - Writes the pricing summary from computed numbers (~$0.00004 per summary, cached)
+- **Gemini 3.1 Flash-Lite via OpenRouter** - Identifies products in screenshots (chosen by comparing 6 vision models, see [`eval/SCREENSHOTS.md`](eval/SCREENSHOTS.md))
 - **Jev (TypeSafe) via OpenRouter** - Decision model for the bad-price guard (~0.6s, ~$0.00002 per check)
 - **Clerk** - Authentication (Google sign-in, sessions, user management)
 - **Vercel Cron** - Scheduled daily price checks
@@ -193,7 +195,7 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ### User Flow
 
-1. **User adds product** - Paste any e-commerce URL on the homepage, then optionally add more shops' links to the same product
+1. **User adds product** - Paste a product link, type a product name, or use a screenshot (identified by a vision model, confirmed by the user). Names and screenshots go through Find best prices; tracking the first shop creates the product
 2. **Firecrawl scrapes** - Instantly extracts product name, price, currency, and image
 3. **Data stored** - A product with one listing per shop is saved to Neon, scoped to the Clerk user
 4. **Currency conversion** - Daily USD-based rates from open.er-api.com are cached in Neon once a day; each listing shows its original price and its price in the user's preferred currency
@@ -276,7 +278,8 @@ dealdrop/
 │   ├── ui/                             # shadcn/ui components
 │   ├── AddProductForm.js               # Product URL input (opens Clerk sign-in)
 │   ├── SettingSelect.js                # Header dropdowns: shops-in country, preferred currency
-│   ├── FindShops.js                    # Top 5 cheapest shops found for a product
+│   ├── FindShops.js                    # Find best prices for a tracked product
+│   ├── ShopResults.js                  # Shared shop list: local/international, condition filter, Track
 │   ├── PriceAnalysis.js                # Pricing analysis panel
 │   ├── ProductCard.js                  # Product with all its shops, cheapest first, add-shop form
 │   ├── PriceChart.js                   # Recharts price history
@@ -291,6 +294,7 @@ dealdrop/
 │   ├── llm.js                          # Swappable LLM client (OpenRouter chat API)
 │   ├── ai-log.js                       # Logs model, latency, tokens, cost for every AI call
 │   ├── discover.js                     # Find shops: search -> Jev pre-check -> read pages -> Jev match
+│   ├── identify.js                     # Identify a product from a screenshot (vision model)
 │   ├── countries.js                    # 'Shops in' country list
 │   ├── jev.js                          # Jev client (OpenRouter Decisions API)
 │   ├── price-guard.js                  # Bad-price guard using Jev

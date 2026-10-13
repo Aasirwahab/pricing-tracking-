@@ -7,6 +7,7 @@ import { convert, getRates } from "@/lib/currency";
 import { analyzePrices } from "@/lib/analysis";
 import { getInsight } from "@/lib/insights";
 import { discoverShops } from "@/lib/discover";
+import { identifyProduct } from "@/lib/identify";
 import { findCountry, isLocalShop } from "@/lib/countries";
 
 // Shop discovery reads several pages (~30 Firecrawl credits), so results are reused for a day.
@@ -282,6 +283,55 @@ export async function getPriceAnalysis(productId) {
   }
 }
 
+// Shapes a stored discovery for the browser: matches only, priced in the user's
+// currency, cheapest first, with local and international shops separated.
+function shopsFromDiscovery(discovery, { country, currency, fx, trackedUrls }) {
+  const tracked = new Set(trackedUrls);
+  const matches = discovery.results
+    .filter((c) => c.status === "match")
+    .map((c) => ({
+      url: c.url,
+      shop: c.shop,
+      name: c.name,
+      price: c.price,
+      currency: c.currency,
+      // Searches saved before condition existed count as new
+      condition: c.condition ?? "new",
+      matchP: c.matchP,
+      converted_price: convert(c.price, c.currency, currency, fx?.rates),
+      tracked: tracked.has(c.url),
+      local: isLocalShop(country, c),
+    }))
+    .sort(
+      (a, b) =>
+        (a.converted_price ?? Infinity) - (b.converted_price ?? Infinity)
+    );
+
+  // Shops abroad may not deliver, and their price excludes shipping and import
+  // duty, so they are listed separately instead of competing with local shops.
+  // The browser filters by condition (new only, or including refurbished/used)
+  // and then shows the first TOP_SHOPS / TOP_INTERNATIONAL_SHOPS.
+  return {
+    discoveryId: discovery.id,
+    productId: discovery.product_id ?? null,
+    shops: matches.filter((s) => s.local),
+    internationalShops: matches.filter((s) => !s.local),
+    limits: { local: TOP_SHOPS, international: TOP_INTERNATIONAL_SHOPS },
+    currency,
+    country: country.name,
+    searchedAt: discovery.created_at,
+  };
+}
+
+async function searchContext() {
+  const [countryCode, currency, fx] = await Promise.all([
+    getShopCountry(),
+    getPreferredCurrency(),
+    getRates(),
+  ]);
+  return { country: findCountry(countryCode) ?? findCountry(""), currency, fx };
+}
+
 // Finds the same product at other shops in the user's "Shops in" country and
 // returns the cheapest few in the user's currency. Every candidate (including
 // rejected ones and Jev's probabilities) is stored for the matching eval.
@@ -300,16 +350,13 @@ export async function findShops(productId) {
       return { error: "Product not found" };
     }
 
-    const [countryCode, currency, fx, listings] = await Promise.all([
-      getShopCountry(),
-      getPreferredCurrency(),
-      getRates(),
+    const [{ country, currency, fx }, listings] = await Promise.all([
+      searchContext(),
       sql`select url from listings where product_id = ${productId}`,
     ]);
-    const country = findCountry(countryCode) ?? findCountry("");
 
     let [discovery] = await sql`
-      select id, results, created_at from discoveries
+      select id, product_id, results, created_at from discoveries
       where product_id = ${productId}
         and country is not distinct from ${country.code || null}
         and created_at > now() - make_interval(hours => ${DISCOVERY_CACHE_HOURS})
@@ -328,48 +375,19 @@ export async function findShops(productId) {
       });
 
       [discovery] = await sql`
-        insert into discoveries (product_id, country, query, results)
-        values (${productId}, ${country.code || null}, ${query}, ${JSON.stringify(candidates)})
-        returning id, results, created_at
+        insert into discoveries (product_id, user_id, country, query, results)
+        values (${productId}, ${userId}, ${country.code || null}, ${query}, ${JSON.stringify(candidates)})
+        returning id, product_id, results, created_at
       `;
     }
 
-    const tracked = new Set(listings.map((l) => l.url));
-    const matches = discovery.results
-      .filter((c) => c.status === "match")
-      .map((c) => ({
-        url: c.url,
-        shop: c.shop,
-        name: c.name,
-        price: c.price,
-        currency: c.currency,
-        // Searches saved before condition existed count as new
-        condition: c.condition ?? "new",
-        matchP: c.matchP,
-        converted_price: convert(c.price, c.currency, currency, fx?.rates),
-        tracked: tracked.has(c.url),
-        local: isLocalShop(country, c),
-      }))
-      .sort(
-        (a, b) =>
-          (a.converted_price ?? Infinity) - (b.converted_price ?? Infinity)
-      );
-
-    // Shops abroad may not deliver, and their price excludes shipping and import
-    // duty, so they are listed separately instead of competing with local shops.
-    // The browser filters by condition (new only, or including refurbished/used)
-    // and then shows the first TOP_SHOPS / TOP_INTERNATIONAL_SHOPS.
-    const shops = matches.filter((s) => s.local);
-    const internationalShops = matches.filter((s) => !s.local);
-
     return {
-      discoveryId: discovery.id,
-      shops,
-      internationalShops,
-      limits: { local: TOP_SHOPS, international: TOP_INTERNATIONAL_SHOPS },
-      currency,
-      country: country.name,
-      searchedAt: discovery.created_at,
+      ...shopsFromDiscovery(discovery, {
+        country,
+        currency,
+        fx,
+        trackedUrls: listings.map((l) => l.url),
+      }),
       cached,
     };
   } catch (error) {
@@ -378,8 +396,105 @@ export async function findShops(productId) {
   }
 }
 
-// Tracks a shop found by findShops. Price data comes from the stored discovery,
-// not from the browser, so it can't be tampered with.
+// Same search as findShops, but starting from a product name (typed, or confirmed
+// after a screenshot). No product exists yet: it is created when the user tracks
+// the first shop.
+export async function searchByName(name) {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { error: "Not authenticated" };
+    }
+
+    const searchName = String(name ?? "").trim().replace(/\s+/g, " ");
+    if (searchName.length < 3 || searchName.length > 150) {
+      return { error: "Enter a product name (3 to 150 characters)" };
+    }
+
+    const { country, currency, fx } = await searchContext();
+
+    let [discovery] = await sql`
+      select id, product_id, results, created_at from discoveries
+      where user_id = ${userId}
+        and lower(search_name) = lower(${searchName})
+        and country is not distinct from ${country.code || null}
+        and created_at > now() - make_interval(hours => ${DISCOVERY_CACHE_HOURS})
+      order by created_at desc
+      limit 1
+    `;
+    const cached = Boolean(discovery);
+
+    if (!discovery) {
+      const { query, candidates } = await discoverShops({
+        productName: searchName,
+        country: country.code || undefined,
+        location: country.code ? country.name : undefined,
+        localTld: country.tld,
+      });
+
+      [discovery] = await sql`
+        insert into discoveries (user_id, search_name, country, query, results)
+        values (${userId}, ${searchName}, ${country.code || null}, ${query}, ${JSON.stringify(candidates)})
+        returning id, product_id, results, created_at
+      `;
+    }
+
+    const trackedUrls = discovery.product_id
+      ? (await sql`select url from listings where product_id = ${discovery.product_id}`).map((l) => l.url)
+      : [];
+
+    return {
+      ...shopsFromDiscovery(discovery, { country, currency, fx, trackedUrls }),
+      cached,
+    };
+  } catch (error) {
+    console.error("Search by name error:", error);
+    return { error: "Could not search for shops right now" };
+  }
+}
+
+// The browser shrinks screenshots to ~1024px JPEG before upload; server actions
+// accept about 1 MB by default.
+const MAX_SCREENSHOT_BYTES = 900 * 1024;
+
+// Identifies the product in a screenshot so the user can confirm the name before
+// searching. The image is only sent to the vision model, never stored.
+export async function identifyScreenshot(formData) {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { error: "Not authenticated" };
+    }
+
+    const file = formData.get("image");
+    if (!file || typeof file.arrayBuffer !== "function" || !file.type?.startsWith("image/")) {
+      return { error: "Please choose an image" };
+    }
+    if (file.size > MAX_SCREENSHOT_BYTES) {
+      return { error: "That image is too large" };
+    }
+
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const result = await identifyProduct(`data:${file.type};base64,${bytes.toString("base64")}`);
+
+    if (!result.isProduct) {
+      return {
+        error:
+          "Couldn't find a product in this image. Try a screenshot that shows the product title or model number.",
+      };
+    }
+
+    return { productName: result.productName, confidence: result.confidence };
+  } catch (error) {
+    console.error("Identify screenshot error:", error);
+    return { error: "Could not read this image right now" };
+  }
+}
+
+// Tracks a shop found by findShops or searchByName. Price data comes from the
+// stored discovery, not from the browser, so it can't be tampered with.
 export async function trackShop(discoveryId, url) {
   try {
     const { userId } = await auth();
@@ -389,10 +504,8 @@ export async function trackShop(discoveryId, url) {
     }
 
     const [discovery] = await sql`
-      select d.product_id, d.results
-      from discoveries d
-      join products p on p.id = d.product_id
-      where d.id = ${discoveryId} and p.user_id = ${userId}
+      select id, product_id, search_name, results from discoveries
+      where id = ${discoveryId} and user_id = ${userId}
     `;
     const shop = discovery?.results.find(
       (c) => c.url === url && c.status === "match"
@@ -401,10 +514,34 @@ export async function trackShop(discoveryId, url) {
       return { error: "Shop not found in this search" };
     }
 
+    // The first shop tracked from a name/screenshot search creates the product
+    let productId = discovery.product_id;
+    if (!productId) {
+      const [product] = await sql`
+        insert into products (user_id, name, image_url)
+        values (${userId}, ${discovery.search_name}, ${shop.image_url ?? null})
+        returning id
+      `;
+      const [linked] = await sql`
+        update discoveries set product_id = ${product.id}
+        where id = ${discovery.id} and product_id is null
+        returning product_id
+      `;
+      if (linked) {
+        productId = product.id;
+      } else {
+        // Another click linked the search first; use that product instead
+        await sql`delete from products where id = ${product.id}`;
+        [{ product_id: productId }] = await sql`
+          select product_id from discoveries where id = ${discovery.id}
+        `;
+      }
+    }
+
     const [listing] = await sql`
       insert into listings (product_id, url, shop, name, current_price, currency, condition, image_url)
-      values (${discovery.product_id}, ${shop.url}, ${shop.shop}, ${shop.name},
-        ${shop.price}, ${shop.currency}, ${shop.condition ?? "new"}, ${shop.image_url})
+      values (${productId}, ${shop.url}, ${shop.shop}, ${shop.name},
+        ${shop.price}, ${shop.currency}, ${shop.condition ?? "new"}, ${shop.image_url ?? null})
       on conflict (product_id, url) do nothing
       returning id
     `;
@@ -417,7 +554,7 @@ export async function trackShop(discoveryId, url) {
     }
 
     revalidatePath("/");
-    return { success: true };
+    return { success: true, productId };
   } catch (error) {
     return { error: error.message };
   }
