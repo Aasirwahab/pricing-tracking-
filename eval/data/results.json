@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-13T21:15:59.492Z",
+  "generatedAt": "2026-10-13T21:35:23.707Z",
   "models": {
     "embeddings": "openai/text-embedding-3-small",
     "llm": "google/gemini-2.5-flash-lite",
@@ -58,15 +58,15 @@
       }
     },
     "model-number": {
-      "accuracy": 0.8846153846153846,
-      "precision": 0.8723404255319149,
+      "accuracy": 0.9038461538461539,
+      "precision": 0.8913043478260869,
       "recall": 1,
-      "f1": 0.9318181818181819,
+      "f1": 0.9425287356321839,
       "tp": 41,
-      "fp": 6,
-      "tn": 5,
+      "fp": 5,
+      "tn": 6,
       "fn": 0,
-      "auc": 0.7272727272727273,
+      "auc": 0.7727272727272727,
       "brier": null,
       "calibration": null,
       "threshold": "rule",
@@ -75,7 +75,7 @@
       "calls": 0,
       "byCategory": {
         "watches": 1,
-        "phones": 0.9230769230769231,
+        "phones": 1,
         "headphones": 0.7857142857142857,
         "shoes": 0.75
       }
@@ -94,7 +94,7 @@
       "calibration": null,
       "threshold": "0.706 (LOPO-tuned)",
       "costPer1kPairs": 0.0003453846153846154,
-      "msPerCall": 5406,
+      "msPerCall": 4280,
       "calls": 1,
       "byCategory": {
         "watches": 0.7058823529411765,
@@ -104,134 +104,134 @@
       }
     },
     "llm-judge": {
-      "accuracy": 0.8653846153846154,
-      "precision": 0.925,
-      "recall": 0.9024390243902439,
-      "f1": 0.9135802469135802,
-      "tp": 37,
+      "accuracy": 0.8461538461538461,
+      "precision": 0.9230769230769231,
+      "recall": 0.8780487804878049,
+      "f1": 0.9,
+      "tp": 36,
       "fp": 3,
       "tn": 8,
-      "fn": 4,
-      "auc": 0.8148558758314856,
+      "fn": 5,
+      "auc": 0.802660753880266,
       "brier": null,
       "calibration": null,
       "threshold": "YES/NO",
       "costPer1kPairs": 0.01977115384615385,
-      "msPerCall": 1672.1538461538462,
+      "msPerCall": 1698.4423076923076,
       "calls": 52,
       "byCategory": {
-        "watches": 0.8823529411764706,
+        "watches": 0.8235294117647058,
         "phones": 1,
         "headphones": 0.8571428571428571,
         "shoes": 0.625
       }
     },
     "jev": {
-      "accuracy": 0.8461538461538461,
-      "precision": 0.9459459459459459,
-      "recall": 0.8536585365853658,
-      "f1": 0.8974358974358975,
-      "tp": 35,
-      "fp": 2,
-      "tn": 9,
-      "fn": 6,
-      "auc": 0.9600886917960089,
-      "brier": 0.09295961538461536,
-      "calibration": [
-        {
-          "range": "0.0-0.2",
-          "n": 9,
-          "meanPredicted": 0.08888888888888889,
-          "observedSame": 0.2222222222222222
-        },
-        {
-          "range": "0.2-0.4",
-          "n": 3,
-          "meanPredicted": 0.30666666666666664,
-          "observedSame": 0.3333333333333333
-        },
-        {
-          "range": "0.4-0.6",
-          "n": 6,
-          "meanPredicted": 0.5016666666666666,
-          "observedSame": 0.6666666666666666
-        },
-        {
-          "range": "0.6-0.8",
-          "n": 7,
-          "meanPredicted": 0.6642857142857144,
-          "observedSame": 1
-        },
-        {
-          "range": "0.8-1.0",
-          "n": 27,
-          "meanPredicted": 0.8885185185185186,
-          "observedSame": 1
-        }
-      ],
-      "threshold": "0.5",
-      "costPer1kPairs": 0.011012884615384617,
-      "msPerCall": 634.5,
-      "calls": 8,
-      "byCategory": {
-        "watches": 0.8235294117647058,
-        "phones": 1,
-        "headphones": 0.9285714285714286,
-        "shoes": 0.5
-      }
-    },
-    "cascade": {
-      "accuracy": 0.8461538461538461,
-      "precision": 0.9459459459459459,
-      "recall": 0.8536585365853658,
-      "f1": 0.8974358974358975,
-      "tp": 35,
-      "fp": 2,
-      "tn": 9,
-      "fn": 6,
-      "auc": 0.9667405764966741,
-      "brier": 0.09146730769230768,
+      "accuracy": 0.8846153846153846,
+      "precision": 0.972972972972973,
+      "recall": 0.8780487804878049,
+      "f1": 0.923076923076923,
+      "tp": 36,
+      "fp": 1,
+      "tn": 10,
+      "fn": 5,
+      "auc": 0.9689578713968958,
+      "brier": 0.09075192307692306,
       "calibration": [
         {
           "range": "0.0-0.2",
           "n": 10,
-          "meanPredicted": 0.049,
+          "meanPredicted": 0.097,
           "observedSame": 0.2
         },
         {
           "range": "0.2-0.4",
           "n": 2,
-          "meanPredicted": 0.355,
+          "meanPredicted": 0.285,
           "observedSame": 0.5
         },
         {
           "range": "0.4-0.6",
           "n": 6,
-          "meanPredicted": 0.5016666666666666,
+          "meanPredicted": 0.5049999999999999,
           "observedSame": 0.6666666666666666
         },
         {
           "range": "0.6-0.8",
-          "n": 7,
-          "meanPredicted": 0.6642857142857144,
+          "n": 9,
+          "meanPredicted": 0.6866666666666666,
           "observedSame": 1
         },
         {
           "range": "0.8-1.0",
-          "n": 27,
-          "meanPredicted": 0.8885185185185186,
+          "n": 25,
+          "meanPredicted": 0.8911999999999999,
+          "observedSame": 1
+        }
+      ],
+      "threshold": "0.5",
+      "costPer1kPairs": 0.011012884615384617,
+      "msPerCall": 686.875,
+      "calls": 8,
+      "byCategory": {
+        "watches": 0.8823529411764706,
+        "phones": 1,
+        "headphones": 0.9285714285714286,
+        "shoes": 0.625
+      }
+    },
+    "cascade": {
+      "accuracy": 0.8846153846153846,
+      "precision": 0.972972972972973,
+      "recall": 0.8780487804878049,
+      "f1": 0.923076923076923,
+      "tp": 36,
+      "fp": 1,
+      "tn": 10,
+      "fn": 5,
+      "auc": 0.9745011086474501,
+      "brier": 0.08888653846153843,
+      "calibration": [
+        {
+          "range": "0.0-0.2",
+          "n": 11,
+          "meanPredicted": 0.04727272727272727,
+          "observedSame": 0.18181818181818182
+        },
+        {
+          "range": "0.2-0.4",
+          "n": 1,
+          "meanPredicted": 0.36,
+          "observedSame": 1
+        },
+        {
+          "range": "0.4-0.6",
+          "n": 6,
+          "meanPredicted": 0.5049999999999999,
+          "observedSame": 0.6666666666666666
+        },
+        {
+          "range": "0.6-0.8",
+          "n": 9,
+          "meanPredicted": 0.6866666666666666,
+          "observedSame": 1
+        },
+        {
+          "range": "0.8-1.0",
+          "n": 25,
+          "meanPredicted": 0.8911999999999999,
           "observedSame": 1
         }
       ],
       "threshold": "code rule, then Jev 0.5",
-      "costPer1kPairs": 0.009953953402366865,
-      "msPerCall": 634.5,
+      "costPer1kPairs": 0.009742167159763313,
+      "msPerCall": 686.875,
       "calls": 8,
       "byCategory": {
-        "watches": 0.8235294117647058,
+        "watches": 0.8823529411764706,
         "phones": 1,
         "headphones": 0.9285714285714286,
-        "shoes": 0.5
+        "shoes": 0.625
       }
     }
   },

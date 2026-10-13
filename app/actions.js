@@ -325,15 +325,43 @@ function shopsFromDiscovery(discovery, { country, currency, fx, trackedUrls }) {
         (c) =>
           c.status === "read_failed" &&
           // Exact model code in the title is hard evidence, so Jev only needs to
-          // lean "same"; without a code, require strong agreement.
+          // lean "same"; a near code is shown as "similar"; without a code,
+          // require strong agreement.
           (c.titleCodeMatch === true
             ? c.titleSameP >= 0.5
-            : c.titleSameP >= UNPRICED_TITLE_MATCH) &&
+            : c.titleNearCode || c.titleSameP >= UNPRICED_TITLE_MATCH) &&
           c.shopP >= UNPRICED_TITLE_MATCH &&
           isLocalShop(country, { shop: c.shop })
       )
       .slice(0, TOP_INTERNATIONAL_SHOPS)
-      .map((c) => ({ url: c.url, shop: c.shop, title: c.title })),
+      .map((c) => ({
+        url: c.url,
+        shop: c.shop,
+        title: c.title,
+        similar: c.titleCodeMatch !== true && Boolean(c.titleNearCode),
+      })),
+    // Probable aliases (near model code) that Jev didn't confirm: shown with
+    // prices so the user can decide, local shops first, never ranked as matches.
+    similarShops: discovery.results
+      .filter((c) => c.status === "similar")
+      .map((c) => ({
+        url: c.url,
+        shop: c.shop,
+        name: c.name,
+        price: c.price,
+        currency: c.currency,
+        condition: c.condition ?? "new",
+        matchP: c.matchP,
+        converted_price: convert(c.price, c.currency, currency, fx?.rates),
+        tracked: tracked.has(c.url),
+        local: isLocalShop(country, c),
+      }))
+      .sort(
+        (a, b) =>
+          b.local - a.local ||
+          (a.converted_price ?? Infinity) - (b.converted_price ?? Infinity)
+      )
+      .slice(0, TOP_INTERNATIONAL_SHOPS),
     limits: { local: TOP_SHOPS, international: TOP_INTERNATIONAL_SHOPS },
     currency,
     country: country.name,
@@ -527,8 +555,9 @@ export async function trackShop(discoveryId, url) {
       select id, product_id, search_name, results from discoveries
       where id = ${discoveryId} and user_id = ${userId}
     `;
+    // "similar" shops can be tracked too: the user saw the differing model code
     const shop = discovery?.results.find(
-      (c) => c.url === url && c.status === "match"
+      (c) => c.url === url && (c.status === "match" || c.status === "similar")
     );
     if (!shop) {
       return { error: "Shop not found in this search" };

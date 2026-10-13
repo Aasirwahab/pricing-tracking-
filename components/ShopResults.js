@@ -137,7 +137,9 @@ export default function ShopResults({ result, onTracked }) {
       {shops.length === 0 ? (
         <p className="text-sm text-gray-500">
           No shops in {country} with a readable price for this exact product.
-          {result.unpricedShops?.length > 0 || internationalShops.length > 0
+          {result.unpricedShops?.length > 0 ||
+          result.similarShops?.length > 0 ||
+          internationalShops.length > 0
             ? " See below."
             : " Try \"Shops in: Worldwide\" at the top."}
         </p>
@@ -157,6 +159,11 @@ export default function ShopResults({ result, onTracked }) {
             {result.unpricedShops.map((s) => (
               <li key={s.url} className="flex items-center gap-2 text-sm">
                 <span className="font-medium text-gray-900">{s.shop}</span>
+                {s.similar && (
+                  <Badge variant="outline" className="border-transparent bg-blue-50 text-blue-700">
+                    similar code
+                  </Badge>
+                )}
                 <span className="truncate text-gray-500">{s.title}</span>
                 <a
                   href={s.url}
@@ -170,6 +177,20 @@ export default function ShopResults({ result, onTracked }) {
             ))}
           </ul>
         </div>
+      )}
+
+      {result.similarShops?.length > 0 && (
+        <details className="group" open={shops.length === 0}>
+          <summary className="cursor-pointer select-none text-sm font-medium text-gray-700">
+            Similar models ({result.similarShops.length})
+            <span className="ml-1 font-normal text-gray-500">
+              · the model code differs slightly (often a regional version); check it&apos;s the one you want
+            </span>
+          </summary>
+          <ol className="mt-2 divide-y rounded-md border bg-white">
+            {result.similarShops.map(shopRow)}
+          </ol>
+        </details>
       )}
 
       {internationalShops.length > 0 && (

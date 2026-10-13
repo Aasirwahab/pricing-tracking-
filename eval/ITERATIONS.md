@@ -110,3 +110,24 @@ Jev is not deterministic, so before trusting a 2-pair change, both versions were
 **Lesson:** the biggest gap was **search coverage**, not matching. A shop the pipeline never sees can't
 be matched, which the identity eval (which only scores candidates that were found) cannot reveal. A
 recall eval ("for products with known local shops, how many does discovery find?") is the next measurement.
+
+## v4: model-code aliases (Casio LTP-1302D-5A, Sri Lanka)
+
+The user searched "LTP-1302**D**-5A". Sri Lankan shops (and Google's own results) list the same watch as
+"LTP-1302**DD**-5AV"; only one shop worldwide used the user's exact code. The pipeline found 20+ Sri Lankan
+results but rejected every one: the rule "different model code = different product" is right for
+A500WA-1 vs -7, but here the code differs in the **middle** (D vs DD), which the suffix-tolerant check
+did not allow.
+
+| Finding | Fix |
+|---|---|
+| Codes differing only by small letter changes are likely aliases, not different products | `nearModelCode`: same leading letters (LTP, not MTP), **identical digits** (so -5A brown ≠ -1A black ≠ -4A pink), ≤2 letter edits in the core, any extra letters at the end (V, DF, VDF). 15 unit cases incl. negatives (XM4/XM5, A35/A55, iPhone 14/15, SRPD51/55) |
+| Ambiguous evidence should not be decided for the user | Near-code shops that Jev doesn't confirm are shown as **"Similar models"** with prices (local first) and can be tracked; never ranked as matches |
+| The aliased shops were missing from search results entirely | **Alias search:** when no local result looks like a match, the most common near code among shop results (e.g. "LTP-1302DD-5A") is searched on the country's sites (~2 credits) and checked the same way |
+| "128GB" was treated as a model code, so iPhone 14 128GB "contained the code" of iPhone 15 128GB | Capacity/size tokens are no longer model identity (eval re-run: Jev precision 94.9% → 97.3%, AUC 0.969) |
+| One unsupported URL (facebook.com) failed the whole batch of page reads | Social/video platforms are never sent to the page reader; a rejected batch falls back to individual reads (2 at a time) |
+
+Result for the same search: ceylonhome.lk "LTP-1302DD-5AV", LKR 17,050 (the price Google showed), shown first
+under Similar models; ubuy.com.lk listed with a hidden price; look-alikes (men's MTP, pink -4A2V,
+LTP-1314D) correctly rejected. 33 credits, 28 s. gearz.lk was not returned by the search engine for any
+query: no single search engine sees every shop.
