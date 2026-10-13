@@ -8,6 +8,7 @@ Track product prices across e-commerce sites and get alerts on price drops. Buil
 ## 🎯 Features
 
 - 🔍 **Track Any Product** - Works with Amazon, Zara, Walmart, and more
+- 🔎 **Find Best Prices** - One click searches the web for the same product in your chosen country, checks each shop sells the exact model (Jev), and shows the 5 cheapest with a match score. Track any of them in one click
 - 🏪 **Compare Shops** - Add several shops' links to one product; listings are sorted cheapest first
 - 💱 **Any Currency** - Each shop keeps its original price; everything is also shown in your chosen currency (166 currencies, daily rates)
 - 📊 **Price History Charts** - Interactive graphs showing price trends over time
@@ -208,6 +209,17 @@ Open [http://localhost:3000](http://localhost:3000)
 5. **Updates database** - Saves new prices and adds to history if changed
 6. **Sends email alerts** - Looks up the user's email in Clerk and notifies them (Brevo, falling back to Resend) when the price drops
 
+### Find Best Prices: How It Works
+
+1. **Search query**: a cheap LLM turns a long marketplace title into brand + model + variant (e.g. `Casio MTP-B145D-2A2V blue dial watch`)
+2. **Web search** in the user's "Shops in" country (Firecrawl search, 10 results)
+3. **One Jev call pre-checks every result**: "is this a shop page?" and "does the title look like the same product?". Reading a page costs ~5 Firecrawl credits and search ~2, so obvious non-shops (YouTube, Reddit, category pages) and other models are skipped before any page is read
+4. **Read the 6 most promising pages** in parallel (25s timeout each)
+5. **One Jev call checks every page**: exactly the same product? Regional/packaging suffixes (e.g. Casio `-2A2VDF` vs `-2A2V`) are the same product; different colors, models, accessories, or bundles are not
+6. **Rank** matches by price in the user's currency and show the top 5
+7. **Cached for 24 hours** per product and country. Every candidate, including rejected ones with Jev's probabilities, is stored in `discoveries` as data for the matching eval
+
+Measured on a real search (Casio MTP-B145D-2A2V, Sri Lanka): 6 correct shops across LKR, INR, USD, and GBP, 32 Firecrawl credits, ~48s, $0.00026 in AI calls.
 ### Pricing Analysis: How It Works
 
 1. **Daily best-price series**: `price_history` only stores a row when a price changes, so a plain average of rows over-weights shops whose price changes often. The analysis rebuilds one value per day: the lowest price available across all shops, carrying each shop's last price forward. In a test where one shop flips between $100 and $104 daily and another stays at $90, the naive average is $101.36 while the true best-price average is $90.00.
@@ -245,7 +257,9 @@ dealdrop/
 ├── components/
 │   ├── ui/                             # shadcn/ui components
 │   ├── AddProductForm.js               # Product URL input (opens Clerk sign-in)
-│   ├── CurrencySelect.js               # Preferred currency picker
+│   ├── SettingSelect.js                # Header dropdowns: shops-in country, preferred currency
+│   ├── FindShops.js                    # Top 5 cheapest shops found for a product
+│   ├── PriceAnalysis.js                # Pricing analysis panel
 │   ├── ProductCard.js                  # Product with all its shops, cheapest first, add-shop form
 │   ├── PriceChart.js                   # Recharts price history
 │   └── AuthButton.js                   # Clerk sign in / sign out button
@@ -258,6 +272,8 @@ dealdrop/
 │   ├── insights.js                     # Cached LLM summary of the analysis
 │   ├── llm.js                          # Swappable LLM client (OpenRouter chat API)
 │   ├── ai-log.js                       # Logs model, latency, tokens, cost for every AI call
+│   ├── discover.js                     # Find shops: search -> Jev pre-check -> read pages -> Jev match
+│   ├── countries.js                    # 'Shops in' country list
 │   ├── jev.js                          # Jev client (OpenRouter Decisions API)
 │   ├── price-guard.js                  # Bad-price guard using Jev
 │   ├── email.js                        # Email template + Brevo/Resend fallback

@@ -5,6 +5,7 @@ import { addProduct, deleteListing, deleteProduct } from "@/app/actions";
 import { formatPrice } from "@/lib/format";
 import PriceChart from "./PriceChart";
 import PriceAnalysis from "./PriceAnalysis";
+import FindShops from "./FindShops";
 import {
   Card,
   CardContent,
@@ -23,17 +24,19 @@ import {
   Plus,
   Loader2,
   BarChart3,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 
 // `product.listings` arrive sorted cheapest first, each with `converted_price`
 // in `currency` (null when no exchange rate is available for that listing).
-export default function ProductCard({ product, currency }) {
+export default function ProductCard({ product, currency, shopCountry }) {
   const [chartListingId, setChartListingId] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [shopUrl, setShopUrl] = useState("");
   const [addingShop, setAddingShop] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const [showShops, setShowShops] = useState(false);
 
   const cheapest = product.listings[0];
   const shopCount = product.listings.length;
@@ -116,6 +119,14 @@ export default function ProductCard({ product, currency }) {
       </CardHeader>
 
       <CardContent className="space-y-3">
+        {showShops && (
+          <FindShops
+            productId={product.id}
+            currency={currency}
+            shopCountry={shopCountry}
+          />
+        )}
+
         {showAnalysis && (
           <PriceAnalysis productId={product.id} currency={currency} />
         )}
@@ -220,16 +231,27 @@ export default function ProductCard({ product, currency }) {
         </form>
       </CardContent>
 
-      <CardFooter className="pt-0 flex justify-between gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowAnalysis(!showAnalysis)}
-          className="gap-1"
-        >
-          <BarChart3 className="w-4 h-4" />
-          {showAnalysis ? "Hide analysis" : "Price analysis"}
-        </Button>
+      <CardFooter className="pt-0 flex flex-wrap justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            onClick={() => setShowShops(!showShops)}
+            className="gap-1 bg-orange-500 hover:bg-orange-600"
+          >
+            <Search className="w-4 h-4" />
+            {showShops ? "Hide shops" : "Find best prices"}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowAnalysis(!showAnalysis)}
+            className="gap-1"
+          >
+            <BarChart3 className="w-4 h-4" />
+            {showAnalysis ? "Hide analysis" : "Price analysis"}
+          </Button>
+        </div>
 
         <Button
           variant="ghost"

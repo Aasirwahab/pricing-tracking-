@@ -1,9 +1,16 @@
 import { auth } from "@clerk/nextjs/server";
-import { getPreferredCurrency, getProducts } from "./actions";
+import {
+  getPreferredCurrency,
+  getProducts,
+  getShopCountry,
+  setPreferredCurrency,
+  setShopCountry,
+} from "./actions";
 import { getRates, withConvertedPrices } from "@/lib/currency";
+import { SHOP_COUNTRIES } from "@/lib/countries";
 import AddProductForm from "@/components/AddProductForm";
 import ProductCard from "@/components/ProductCard";
-import CurrencySelect from "@/components/CurrencySelect";
+import SettingSelect from "@/components/SettingSelect";
 import { TrendingDown, Shield, Bell, Rabbit } from "lucide-react";
 import AuthButton from "@/components/AuthButton";
 import Image from "next/image";
@@ -12,9 +19,14 @@ export default async function Home() {
   const { userId } = await auth();
   const user = userId ? { id: userId } : null;
 
-  const [rawProducts, currency, fx] = user
-    ? await Promise.all([getProducts(), getPreferredCurrency(), getRates()])
-    : [[], "USD", null];
+  const [rawProducts, currency, fx, shopCountry] = user
+    ? await Promise.all([
+        getProducts(),
+        getPreferredCurrency(),
+        getRates(),
+        getShopCountry(),
+      ])
+    : [[], "USD", null, ""];
 
   const products = rawProducts.map((product) =>
     withConvertedPrices(product, currency, fx?.rates)
@@ -56,10 +68,25 @@ export default async function Home() {
           </div>
 
           <div className="flex items-center gap-3">
+            {user && (
+              <SettingSelect
+                label="Shops in"
+                value={shopCountry}
+                options={SHOP_COUNTRIES.map((c) => ({
+                  value: c.code,
+                  label: c.name,
+                }))}
+                action={setShopCountry}
+              />
+            )}
             {user && fx && (
-              <CurrencySelect
+              <SettingSelect
+                label="Show prices in"
                 value={currency}
-                currencies={Object.keys(fx.rates).sort()}
+                options={Object.keys(fx.rates)
+                  .sort()
+                  .map((code) => ({ value: code, label: code }))}
+                action={setPreferredCurrency}
               />
             )}
             <AuthButton user={user} />
@@ -122,6 +149,7 @@ export default async function Home() {
                 key={product.id}
                 product={product}
                 currency={currency}
+                shopCountry={shopCountry}
               />
             ))}
           </div>

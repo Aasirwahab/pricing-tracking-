@@ -3,9 +3,15 @@
 import { auth } from "@clerk/nextjs/server";
 import { sql } from "@/lib/db";
 import { scrapeProduct } from "@/lib/firecrawl";
-import { getRates } from "@/lib/currency";
+import { convert, getRates } from "@/lib/currency";
 import { analyzePrices } from "@/lib/analysis";
 import { getInsight } from "@/lib/insights";
+import { discoverShops } from "@/lib/discover";
+import { findCountry } from "@/lib/countries";
+
+// Shop discovery reads several pages (~30 Firecrawl credits), so results are reused for a day.
+const DISCOVERY_CACHE_HOURS = 24;
+const TOP_SHOPS = 5;
 import { revalidatePath } from "next/cache";
 
 function shopFromUrl(url) {
@@ -270,6 +276,175 @@ export async function getPriceAnalysis(productId) {
   } catch (error) {
     console.error("Price analysis error:", error);
     return { error: "Could not analyze prices right now" };
+  }
+}
+
+// Finds the same product at other shops in the user's "Shops in" country and
+// returns the cheapest few in the user's currency. Every candidate (including
+// rejected ones and Jev's probabilities) is stored for the matching eval.
+export async function findShops(productId) {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { error: "Not authenticated" };
+    }
+
+    const [product] = await sql`
+      select id, name from products where id = ${productId} and user_id = ${userId}
+    `;
+    if (!product) {
+      return { error: "Product not found" };
+    }
+
+    const [countryCode, currency, fx, listings] = await Promise.all([
+      getShopCountry(),
+      getPreferredCurrency(),
+      getRates(),
+      sql`select url from listings where product_id = ${productId}`,
+    ]);
+    const country = findCountry(countryCode) ?? findCountry("");
+
+    let [discovery] = await sql`
+      select id, results, created_at from discoveries
+      where product_id = ${productId}
+        and country is not distinct from ${country.code || null}
+        and created_at > now() - make_interval(hours => ${DISCOVERY_CACHE_HOURS})
+      order by created_at desc
+      limit 1
+    `;
+    const cached = Boolean(discovery);
+
+    if (!discovery) {
+      const { query, candidates } = await discoverShops({
+        productName: product.name,
+        country: country.code || undefined,
+        location: country.code ? country.name : undefined,
+        excludeUrls: listings.map((l) => l.url),
+      });
+
+      [discovery] = await sql`
+        insert into discoveries (product_id, country, query, results)
+        values (${productId}, ${country.code || null}, ${query}, ${JSON.stringify(candidates)})
+        returning id, results, created_at
+      `;
+    }
+
+    const tracked = new Set(listings.map((l) => l.url));
+    const shops = discovery.results
+      .filter((c) => c.status === "match")
+      .map((c) => ({
+        url: c.url,
+        shop: c.shop,
+        name: c.name,
+        price: c.price,
+        currency: c.currency,
+        matchP: c.matchP,
+        converted_price: convert(c.price, c.currency, currency, fx?.rates),
+        tracked: tracked.has(c.url),
+      }))
+      .sort(
+        (a, b) =>
+          (a.converted_price ?? Infinity) - (b.converted_price ?? Infinity)
+      )
+      .slice(0, TOP_SHOPS);
+
+    return {
+      discoveryId: discovery.id,
+      shops,
+      currency,
+      country: country.name,
+      searchedAt: discovery.created_at,
+      cached,
+    };
+  } catch (error) {
+    console.error("Find shops error:", error);
+    return { error: "Could not search for shops right now" };
+  }
+}
+
+// Tracks a shop found by findShops. Price data comes from the stored discovery,
+// not from the browser, so it can't be tampered with.
+export async function trackShop(discoveryId, url) {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { error: "Not authenticated" };
+    }
+
+    const [discovery] = await sql`
+      select d.product_id, d.results
+      from discoveries d
+      join products p on p.id = d.product_id
+      where d.id = ${discoveryId} and p.user_id = ${userId}
+    `;
+    const shop = discovery?.results.find(
+      (c) => c.url === url && c.status === "match"
+    );
+    if (!shop) {
+      return { error: "Shop not found in this search" };
+    }
+
+    const [listing] = await sql`
+      insert into listings (product_id, url, shop, name, current_price, currency, image_url)
+      values (${discovery.product_id}, ${shop.url}, ${shop.shop}, ${shop.name},
+        ${shop.price}, ${shop.currency}, ${shop.image_url})
+      on conflict (product_id, url) do nothing
+      returning id
+    `;
+
+    if (listing) {
+      await sql`
+        insert into price_history (listing_id, price, currency)
+        values (${listing.id}, ${shop.price}, ${shop.currency})
+      `;
+    }
+
+    revalidatePath("/");
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+export async function getShopCountry() {
+  const { userId } = await auth();
+
+  if (!userId) {
+    return "";
+  }
+
+  const [settings] = await sql`
+    select shop_country from user_settings where user_id = ${userId}
+  `;
+  return settings?.shop_country ?? "";
+}
+
+export async function setShopCountry(code) {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { error: "Not authenticated" };
+    }
+
+    if (!findCountry(code)) {
+      return { error: "Unsupported country" };
+    }
+
+    await sql`
+      insert into user_settings (user_id, shop_country)
+      values (${userId}, ${code || null})
+      on conflict (user_id) do update set
+        shop_country = excluded.shop_country,
+        updated_at = now()
+    `;
+
+    revalidatePath("/");
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
   }
 }
 
