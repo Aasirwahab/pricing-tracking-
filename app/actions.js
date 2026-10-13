@@ -7,11 +7,12 @@ import { convert, getRates } from "@/lib/currency";
 import { analyzePrices } from "@/lib/analysis";
 import { getInsight } from "@/lib/insights";
 import { discoverShops } from "@/lib/discover";
-import { findCountry } from "@/lib/countries";
+import { findCountry, isLocalShop } from "@/lib/countries";
 
 // Shop discovery reads several pages (~30 Firecrawl credits), so results are reused for a day.
 const DISCOVERY_CACHE_HOURS = 24;
 const TOP_SHOPS = 5;
+const TOP_INTERNATIONAL_SHOPS = 3;
 import { revalidatePath } from "next/cache";
 
 function shopFromUrl(url) {
@@ -320,6 +321,7 @@ export async function findShops(productId) {
         productName: product.name,
         country: country.code || undefined,
         location: country.code ? country.name : undefined,
+        localTld: country.tld,
         excludeUrls: listings.map((l) => l.url),
       });
 
@@ -331,7 +333,7 @@ export async function findShops(productId) {
     }
 
     const tracked = new Set(listings.map((l) => l.url));
-    const shops = discovery.results
+    const matches = discovery.results
       .filter((c) => c.status === "match")
       .map((c) => ({
         url: c.url,
@@ -342,16 +344,24 @@ export async function findShops(productId) {
         matchP: c.matchP,
         converted_price: convert(c.price, c.currency, currency, fx?.rates),
         tracked: tracked.has(c.url),
+        local: isLocalShop(country, c),
       }))
       .sort(
         (a, b) =>
           (a.converted_price ?? Infinity) - (b.converted_price ?? Infinity)
-      )
-      .slice(0, TOP_SHOPS);
+      );
+
+    // Shops abroad may not deliver, and their price excludes shipping and import
+    // duty, so they are listed separately instead of competing with local shops.
+    const shops = matches.filter((s) => s.local).slice(0, TOP_SHOPS);
+    const internationalShops = matches
+      .filter((s) => !s.local)
+      .slice(0, TOP_INTERNATIONAL_SHOPS);
 
     return {
       discoveryId: discovery.id,
       shops,
+      internationalShops,
       currency,
       country: country.name,
       searchedAt: discovery.created_at,
