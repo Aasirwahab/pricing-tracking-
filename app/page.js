@@ -1,7 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
-import { getProducts } from "./actions";
+import { getPreferredCurrency, getProducts } from "./actions";
+import { getRates, withConvertedPrices } from "@/lib/currency";
 import AddProductForm from "@/components/AddProductForm";
 import ProductCard from "@/components/ProductCard";
+import CurrencySelect from "@/components/CurrencySelect";
 import { TrendingDown, Shield, Bell, Rabbit } from "lucide-react";
 import AuthButton from "@/components/AuthButton";
 import Image from "next/image";
@@ -10,7 +12,13 @@ export default async function Home() {
   const { userId } = await auth();
   const user = userId ? { id: userId } : null;
 
-  const products = user ? await getProducts() : [];
+  const [rawProducts, currency, fx] = user
+    ? await Promise.all([getProducts(), getPreferredCurrency(), getRates()])
+    : [[], "USD", null];
+
+  const products = rawProducts.map((product) =>
+    withConvertedPrices(product, currency, fx?.rates)
+  );
 
   const FEATURES = [
     {
@@ -47,7 +55,15 @@ export default async function Home() {
             />
           </div>
 
-          <AuthButton user={user} />
+          <div className="flex items-center gap-3">
+            {user && fx && (
+              <CurrencySelect
+                value={currency}
+                currencies={Object.keys(fx.rates).sort()}
+              />
+            )}
+            <AuthButton user={user} />
+          </div>
         </div>
       </header>
 
@@ -102,7 +118,11 @@ export default async function Home() {
 
           <div className="grid gap-6 md:grid-cols-2 items-start">
             {products.map((product) => (
-              <ProductCard key={product.id} product={product} />
+              <ProductCard
+                key={product.id}
+                product={product}
+                currency={currency}
+              />
             ))}
           </div>
         </section>
@@ -121,6 +141,20 @@ export default async function Home() {
             </p>
           </div>
         </section>
+      )}
+
+      {fx && (
+        <footer className="pb-8 text-center text-xs text-gray-400">
+          Prices converted with rates from {fx.date} by{" "}
+          <a
+            href="https://www.exchangerate-api.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-gray-600"
+          >
+            Exchange Rate API
+          </a>
+        </footer>
       )}
     </main>
   );

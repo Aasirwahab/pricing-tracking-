@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { deleteProduct } from "@/app/actions";
+import { addProduct, deleteListing, deleteProduct } from "@/app/actions";
+import { formatPrice } from "@/lib/format";
 import PriceChart from "./PriceChart";
 import {
   Card,
@@ -11,24 +12,66 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   ExternalLink,
   Trash2,
-  TrendingDown,
-  ChevronDown,
-  ChevronUp,
+  Store,
+  LineChart,
+  X,
+  Plus,
+  Loader2,
 } from "lucide-react";
-import Link from "next/link";
+import { toast } from "sonner";
 
-export default function ProductCard({ product }) {
-  const [showChart, setShowChart] = useState(false);
+// `product.listings` arrive sorted cheapest first, each with `converted_price`
+// in `currency` (null when no exchange rate is available for that listing).
+export default function ProductCard({ product, currency }) {
+  const [chartListingId, setChartListingId] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [shopUrl, setShopUrl] = useState("");
+  const [addingShop, setAddingShop] = useState(false);
+
+  const cheapest = product.listings[0];
+  const shopCount = product.listings.length;
 
   const handleDelete = async () => {
-    if (!confirm("Remove this product from tracking?")) return;
+    if (!confirm("Remove this product and all its shops from tracking?"))
+      return;
 
     setDeleting(true);
     await deleteProduct(product.id);
+  };
+
+  const handleRemoveListing = async (listing) => {
+    const message =
+      shopCount === 1
+        ? `Remove ${listing.shop}? This is the only shop, so the product will be removed too.`
+        : `Remove ${listing.shop} from this product?`;
+    if (!confirm(message)) return;
+
+    const result = await deleteListing(listing.id);
+    if (result.error) toast.error(result.error);
+  };
+
+  const handleAddShop = async (e) => {
+    e.preventDefault();
+    setAddingShop(true);
+
+    const formData = new FormData();
+    formData.append("url", shopUrl);
+    formData.append("productId", product.id);
+
+    const result = await addProduct(formData);
+
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      toast.success(result.message);
+      setShopUrl("");
+    }
+
+    setAddingShop(false);
   };
 
   return (
@@ -49,65 +92,139 @@ export default function ProductCard({ product }) {
               {product.name}
             </h3>
 
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-bold text-orange-500">
-                {product.currency} {product.current_price}
-              </span>
-              <Badge variant="secondary" className="gap-1">
-                <TrendingDown className="w-3 h-3" />
-                Tracking
-              </Badge>
-            </div>
+            {cheapest && (
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="text-sm text-gray-500">
+                  {shopCount > 1 ? "From" : "Price"}
+                </span>
+                <span className="text-3xl font-bold text-orange-500">
+                  {cheapest.converted_price != null
+                    ? formatPrice(cheapest.converted_price, currency)
+                    : formatPrice(cheapest.current_price, cheapest.currency)}
+                </span>
+                <Badge variant="secondary" className="gap-1">
+                  <Store className="w-3 h-3" />
+                  {shopCount} {shopCount === 1 ? "shop" : "shops"}
+                </Badge>
+              </div>
+            )}
           </div>
         </div>
       </CardHeader>
 
-      <CardContent>
-        <div className="flex flex-wrap gap-2">
+      <CardContent className="space-y-3">
+        <ul className="divide-y rounded-md border">
+          {product.listings.map((listing, index) => {
+            const sameCurrency = listing.currency === currency;
+            const showingChart = chartListingId === listing.id;
+
+            return (
+              <li key={listing.id} className="p-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900 truncate">
+                        {listing.shop}
+                      </span>
+                      {index === 0 && shopCount > 1 && (
+                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                          Cheapest
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      {formatPrice(listing.current_price, listing.currency)}
+                      {!sameCurrency && (
+                        <span className="text-gray-400">
+                          {" "}
+                          ≈{" "}
+                          {listing.converted_price != null
+                            ? formatPrice(listing.converted_price, currency)
+                            : "no rate"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={showingChart ? "Hide price chart" : "Show price chart"}
+                    onClick={() =>
+                      setChartListingId(showingChart ? null : listing.id)
+                    }
+                    className={showingChart ? "text-orange-600" : ""}
+                  >
+                    <LineChart className="w-4 h-4" />
+                  </Button>
+
+                  <Button variant="outline" size="sm" asChild className="gap-1">
+                    <a href={listing.url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="w-4 h-4" />
+                      Buy
+                    </a>
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Remove ${listing.shop}`}
+                    onClick={() => handleRemoveListing(listing)}
+                    className="text-gray-400 hover:text-red-600 hover:bg-red-50"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+
+                {showingChart && (
+                  <div className="pt-3">
+                    <PriceChart listingId={listing.id} />
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+
+        <form onSubmit={handleAddShop} className="flex gap-2">
+          <Input
+            type="url"
+            value={shopUrl}
+            onChange={(e) => setShopUrl(e.target.value)}
+            placeholder="Add another shop's link for this product"
+            required
+            disabled={addingShop}
+            className="h-9 text-sm"
+          />
           <Button
+            type="submit"
+            size="sm"
             variant="outline"
-            size="sm"
-            onClick={() => setShowChart(!showChart)}
-            className="gap-1"
+            disabled={addingShop}
+            className="gap-1 shrink-0"
           >
-            {showChart ? (
-              <>
-                <ChevronUp className="w-4 h-4" />
-                Hide Chart
-              </>
+            {addingShop ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <>
-                <ChevronDown className="w-4 h-4" />
-                Show Chart
-              </>
+              <Plus className="w-4 h-4" />
             )}
+            Add shop
           </Button>
-
-          <Button variant="outline" size="sm" asChild className="gap-1">
-            <Link href={product.url} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="w-4 h-4" />
-              View Product
-            </Link>
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDelete}
-            disabled={deleting}
-            className="text-red-600 hover:text-red-700 hover:bg-red-50 gap-1"
-          >
-            <Trash2 className="w-4 h-4" />
-            Remove
-          </Button>
-        </div>
+        </form>
       </CardContent>
 
-      {showChart && (
-        <CardFooter className="pt-0">
-          <PriceChart productId={product.id} />
-        </CardFooter>
-      )}
+      <CardFooter className="pt-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleDelete}
+          disabled={deleting}
+          className="text-red-600 hover:text-red-700 hover:bg-red-50 gap-1"
+        >
+          <Trash2 className="w-4 h-4" />
+          Remove product
+        </Button>
+      </CardFooter>
     </Card>
   );
 }

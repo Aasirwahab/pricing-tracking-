@@ -23,16 +23,17 @@ async function handler(request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const products = await sql`
-      select id, user_id, url, name, current_price::float8 as current_price,
-        currency, image_url, pending_price::float8 as pending_price, pending_currency
-      from products
+    const listings = await sql`
+      select l.id, p.user_id, l.url, l.name, l.current_price::float8 as current_price,
+        l.currency, l.image_url, l.pending_price::float8 as pending_price, l.pending_currency
+      from listings l
+      join products p on p.id = l.product_id
     `;
 
-    console.log(`Found ${products.length} products to check`);
+    console.log(`Found ${listings.length} listings to check`);
 
     const results = {
-      total: products.length,
+      total: listings.length,
       updated: 0,
       failed: 0,
       priceChanges: 0,
@@ -40,9 +41,9 @@ async function handler(request) {
       flagged: 0,
     };
 
-    for (const product of products) {
+    for (const listing of listings) {
       try {
-        const productData = await scrapeProduct(product.url);
+        const productData = await scrapeProduct(listing.url);
 
         if (!productData.currentPrice) {
           results.failed++;
@@ -50,67 +51,67 @@ async function handler(request) {
         }
 
         const newPrice = parseFloat(productData.currentPrice);
-        const oldPrice = product.current_price;
-        const currency = productData.currencyCode || product.currency;
+        const oldPrice = listing.current_price;
+        const currency = productData.currencyCode || listing.currency;
 
         // A flagged price that shows up again on the next check is accepted:
         // scraping glitches rarely repeat identically, real price changes persist.
         const confirmedPending =
-          product.pending_price === newPrice &&
-          product.pending_currency === currency;
+          listing.pending_price === newPrice &&
+          listing.pending_currency === currency;
 
         const guard = confirmedPending
           ? { genuine: true }
           : await checkPriceChange({
-              trackedName: product.name,
-              scrapedName: productData.productName || product.name,
+              trackedName: listing.name,
+              scrapedName: productData.productName || listing.name,
               oldPrice,
-              oldCurrency: product.currency,
+              oldCurrency: listing.currency,
               newPrice,
               newCurrency: currency,
             });
 
         if (!guard.genuine) {
           await sql`
-            update products set
+            update listings set
               pending_price = ${newPrice},
               pending_currency = ${currency}
-            where id = ${product.id}
+            where id = ${listing.id}
           `;
           console.warn(
-            `Flagged price for product ${product.id}: ${product.currency} ${oldPrice} -> ${currency} ${newPrice} (genuine p=${guard.probability})`
+            `Flagged price for listing ${listing.id}: ${listing.currency} ${oldPrice} -> ${currency} ${newPrice} (genuine p=${guard.probability})`
           );
           results.flagged++;
           continue;
         }
 
         await sql`
-          update products set
+          update listings set
             current_price = ${newPrice},
             currency = ${currency},
-            name = ${productData.productName || product.name},
-            image_url = ${productData.productImageUrl || product.image_url},
+            name = ${productData.productName || listing.name},
+            image_url = ${productData.productImageUrl || listing.image_url},
             pending_price = null,
             pending_currency = null,
             updated_at = now()
-          where id = ${product.id}
+          where id = ${listing.id}
         `;
 
         if (oldPrice !== newPrice) {
           await sql`
-            insert into price_history (product_id, price, currency)
-            values (${product.id}, ${newPrice}, ${currency})
+            insert into price_history (listing_id, price, currency)
+            values (${listing.id}, ${newPrice}, ${currency})
           `;
 
           results.priceChanges++;
 
           if (newPrice < oldPrice) {
-            const email = await getUserEmail(product.user_id);
+            const email = await getUserEmail(listing.user_id);
 
             if (email) {
               const emailResult = await sendPriceDropAlert(
                 email,
-                product,
+                listing,
                 oldPrice,
                 newPrice
               );
@@ -124,7 +125,7 @@ async function handler(request) {
 
         results.updated++;
       } catch (error) {
-        console.error(`Error processing product ${product.id}:`, error);
+        console.error(`Error processing listing ${listing.id}:`, error);
         results.failed++;
       }
     }

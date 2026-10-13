@@ -2,30 +2,57 @@
 -- user_id stores the Clerk user ID (e.g. "user_2abc..."), so it is text.
 -- Ownership is enforced in the app queries (WHERE user_id = <Clerk userId>).
 
+-- A product a user tracks (e.g. "Casio A159W-N1 silver")
 create table products (
   id uuid primary key default gen_random_uuid(),
   user_id text not null,
-  url text not null,
   name text not null,
-  current_price numeric(10,2) not null,
-  currency text not null default 'USD',
   image_url text,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- One shop's page for a product, with that shop's own price and currency
+create table listings (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references products(id) on delete cascade,
+  url text not null,
+  shop text not null,
+  name text not null,
+  current_price numeric(10,2) not null,
+  currency text not null,
+  image_url text,
   -- A price the guard flagged as suspicious; accepted if seen again on the next check
   pending_price numeric(10,2),
   pending_currency text,
-  constraint products_user_url_unique unique (user_id, url)
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint listings_product_url_unique unique (product_id, url)
 );
 
 create table price_history (
   id uuid primary key default gen_random_uuid(),
-  product_id uuid not null references products(id) on delete cascade,
+  listing_id uuid not null references listings(id) on delete cascade,
   price numeric(10,2) not null,
   currency text not null,
   checked_at timestamptz not null default now()
 );
 
+create table user_settings (
+  user_id text primary key,
+  preferred_currency text not null default 'USD',
+  updated_at timestamptz not null default now()
+);
+
+-- Daily USD-based exchange rates from open.er-api.com (one row per day)
+create table exchange_rates (
+  rate_date date primary key,
+  base text not null default 'USD',
+  rates jsonb not null,
+  fetched_at timestamptz not null default now()
+);
+
 create index products_user_id_idx on products(user_id);
-create index price_history_product_id_idx on price_history(product_id);
+create index listings_product_id_idx on listings(product_id);
+create index price_history_listing_id_idx on price_history(listing_id);
 create index price_history_checked_at_idx on price_history(checked_at desc);

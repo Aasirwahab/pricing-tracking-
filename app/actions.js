@@ -3,10 +3,18 @@
 import { auth } from "@clerk/nextjs/server";
 import { sql } from "@/lib/db";
 import { scrapeProduct } from "@/lib/firecrawl";
+import { getRates } from "@/lib/currency";
 import { revalidatePath } from "next/cache";
 
+function shopFromUrl(url) {
+  return new URL(url).hostname.replace(/^www\./, "");
+}
+
+// Adds a product by URL. With `productId`, the URL is added as another shop
+// for that existing product instead of creating a new product.
 export async function addProduct(formData) {
   const url = formData.get("url");
+  const productId = formData.get("productId");
 
   if (!url) {
     return { error: "URL is required" };
@@ -17,6 +25,15 @@ export async function addProduct(formData) {
 
     if (!userId) {
       return { error: "Not authenticated" };
+    }
+
+    if (productId) {
+      const [owned] = await sql`
+        select id from products where id = ${productId} and user_id = ${userId}
+      `;
+      if (!owned) {
+        return { error: "Product not found" };
+      }
     }
 
     // Scrape product data with Firecrawl
@@ -30,47 +47,68 @@ export async function addProduct(formData) {
     const newPrice = parseFloat(productData.currentPrice);
     const currency = productData.currencyCode || "USD";
 
-    // Check if product exists to determine if it's an update
-    const [existingProduct] = await sql`
-      select id, current_price::float8 as current_price
-      from products
-      where user_id = ${userId} and url = ${url}
+    // Same URL already tracked by this user? Refresh that listing instead of duplicating it.
+    const [existing] = await sql`
+      select l.id, l.current_price::float8 as current_price
+      from listings l
+      join products p on p.id = l.product_id
+      where p.user_id = ${userId} and l.url = ${url}
     `;
 
-    const isUpdate = !!existingProduct;
+    let listingId;
 
-    // Upsert product (insert or update based on user_id + url)
-    const [product] = await sql`
-      insert into products (user_id, url, name, current_price, currency, image_url)
-      values (${userId}, ${url}, ${productData.productName}, ${newPrice}, ${currency}, ${productData.productImageUrl})
-      on conflict (user_id, url) do update set
-        name = excluded.name,
-        current_price = excluded.current_price,
-        currency = excluded.currency,
-        image_url = excluded.image_url,
-        updated_at = now()
-      returning id, user_id, url, name, current_price::float8 as current_price,
-        currency, image_url, created_at, updated_at
-    `;
-
-    // Add to price history if it's a new product OR price changed
-    const shouldAddHistory =
-      !isUpdate || existingProduct.current_price !== newPrice;
-
-    if (shouldAddHistory) {
+    if (existing) {
       await sql`
-        insert into price_history (product_id, price, currency)
-        values (${product.id}, ${newPrice}, ${currency})
+        update listings set
+          name = ${productData.productName},
+          current_price = ${newPrice},
+          currency = ${currency},
+          image_url = ${productData.productImageUrl},
+          updated_at = now()
+        where id = ${existing.id}
+      `;
+      listingId = existing.id;
+    } else if (productId) {
+      const [listing] = await sql`
+        insert into listings (product_id, url, shop, name, current_price, currency, image_url)
+        values (${productId}, ${url}, ${shopFromUrl(url)}, ${productData.productName},
+          ${newPrice}, ${currency}, ${productData.productImageUrl})
+        returning id
+      `;
+      listingId = listing.id;
+    } else {
+      // New product and its first listing in one statement
+      const [listing] = await sql`
+        with new_product as (
+          insert into products (user_id, name, image_url)
+          values (${userId}, ${productData.productName}, ${productData.productImageUrl})
+          returning id
+        )
+        insert into listings (product_id, url, shop, name, current_price, currency, image_url)
+        select id, ${url}, ${shopFromUrl(url)}, ${productData.productName},
+          ${newPrice}, ${currency}, ${productData.productImageUrl}
+        from new_product
+        returning id
+      `;
+      listingId = listing.id;
+    }
+
+    // Add to price history if it's a new listing OR price changed
+    if (!existing || existing.current_price !== newPrice) {
+      await sql`
+        insert into price_history (listing_id, price, currency)
+        values (${listingId}, ${newPrice}, ${currency})
       `;
     }
 
     revalidatePath("/");
     return {
       success: true,
-      product,
-      message: isUpdate
-        ? "Product updated with latest price!"
-        : "Product added successfully!",
+      message: existing
+        ? "Price refreshed for this shop!"
+        : productId
+          ? "Shop added to product!"
+          : "Product added successfully!",
     };
   } catch (error) {
     console.error("Add product error:", error);
@@ -97,6 +135,37 @@ export async function deleteProduct(productId) {
   }
 }
 
+// Removes one shop from a product; the product goes too if it was its last shop.
+export async function deleteListing(listingId) {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { error: "Not authenticated" };
+    }
+
+    const [deleted] = await sql`
+      delete from listings l
+      using products p
+      where l.id = ${listingId} and p.id = l.product_id and p.user_id = ${userId}
+      returning l.product_id
+    `;
+
+    if (deleted) {
+      await sql`
+        delete from products p
+        where p.id = ${deleted.product_id}
+          and not exists (select 1 from listings l where l.product_id = p.id)
+      `;
+    }
+
+    revalidatePath("/");
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
 export async function getProducts() {
   try {
     const { userId } = await auth();
@@ -106,11 +175,26 @@ export async function getProducts() {
     }
 
     return await sql`
-      select id, user_id, url, name, current_price::float8 as current_price,
-        currency, image_url, created_at, updated_at
-      from products
-      where user_id = ${userId}
-      order by created_at desc
+      select p.id, p.name, p.image_url, p.created_at,
+        coalesce(
+          json_agg(
+            json_build_object(
+              'id', l.id,
+              'url', l.url,
+              'shop', l.shop,
+              'name', l.name,
+              'current_price', l.current_price::float8,
+              'currency', l.currency,
+              'updated_at', l.updated_at
+            ) order by l.created_at
+          ) filter (where l.id is not null),
+          '[]'
+        ) as listings
+      from products p
+      left join listings l on l.product_id = p.id
+      where p.user_id = ${userId}
+      group by p.id
+      order by p.created_at desc
     `;
   } catch (error) {
     console.error("Get products error:", error);
@@ -118,7 +202,7 @@ export async function getProducts() {
   }
 }
 
-export async function getPriceHistory(productId) {
+export async function getPriceHistory(listingId) {
   try {
     const { userId } = await auth();
 
@@ -127,14 +211,56 @@ export async function getPriceHistory(productId) {
     }
 
     return await sql`
-      select ph.id, ph.product_id, ph.price::float8 as price, ph.currency, ph.checked_at
+      select ph.id, ph.listing_id, ph.price::float8 as price, ph.currency, ph.checked_at
       from price_history ph
-      join products p on p.id = ph.product_id
-      where ph.product_id = ${productId} and p.user_id = ${userId}
+      join listings l on l.id = ph.listing_id
+      join products p on p.id = l.product_id
+      where ph.listing_id = ${listingId} and p.user_id = ${userId}
       order by ph.checked_at asc
     `;
   } catch (error) {
     console.error("Get price history error:", error);
     return [];
+  }
+}
+
+export async function getPreferredCurrency() {
+  const { userId } = await auth();
+
+  if (!userId) {
+    return "USD";
+  }
+
+  const [settings] = await sql`
+    select preferred_currency from user_settings where user_id = ${userId}
+  `;
+  return settings?.preferred_currency ?? "USD";
+}
+
+export async function setPreferredCurrency(currency) {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { error: "Not authenticated" };
+    }
+
+    const fx = await getRates();
+    if (!fx?.rates[currency]) {
+      return { error: "Unsupported currency" };
+    }
+
+    await sql`
+      insert into user_settings (user_id, preferred_currency)
+      values (${userId}, ${currency})
+      on conflict (user_id) do update set
+        preferred_currency = excluded.preferred_currency,
+        updated_at = now()
+    `;
+
+    revalidatePath("/");
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
   }
 }

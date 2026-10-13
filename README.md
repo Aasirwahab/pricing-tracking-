@@ -8,6 +8,8 @@ Track product prices across e-commerce sites and get alerts on price drops. Buil
 ## 🎯 Features
 
 - 🔍 **Track Any Product** - Works with Amazon, Zara, Walmart, and more
+- 🏪 **Compare Shops** - Add several shops' links to one product; listings are sorted cheapest first
+- 💱 **Any Currency** - Each shop keeps its original price; everything is also shown in your chosen currency (166 currencies, daily rates)
 - 📊 **Price History Charts** - Interactive graphs showing price trends over time
 - 🔐 **Google Authentication** - Secure sign-in powered by Clerk
 - 🔄 **Automated Daily Checks** - Vercel Cron checks prices automatically
@@ -188,16 +190,17 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ### User Flow
 
-1. **User adds product** - Paste any e-commerce URL on the homepage
+1. **User adds product** - Paste any e-commerce URL on the homepage, then optionally add more shops' links to the same product
 2. **Firecrawl scrapes** - Instantly extracts product name, price, currency, and image
-3. **Data stored** - Product saved to Neon, scoped to the Clerk user
-4. **View tracking** - See current price and interactive price history chart
+3. **Data stored** - A product with one listing per shop is saved to Neon, scoped to the Clerk user
+4. **Currency conversion** - Daily USD-based rates from open.er-api.com are cached in Neon once a day; each listing shows its original price and its price in the user's preferred currency
+5. **View tracking** - See every shop's price, the cheapest one, and a price history chart per shop
 
 ### Automated Price Checking
 
 1. **Vercel Cron** - Runs daily at 9 AM UTC (`vercel.json`)
 2. **Hits the API endpoint** - `GET /api/cron/check-prices`, authenticated with `CRON_SECRET`
-3. **Firecrawl scrapes all products** - Updates prices for all tracked products
+3. **Firecrawl scrapes every shop listing** - Each shop's page is checked on its own
 4. **Bad-price guard** - If a price moves 25%+ or changes currency, Jev (`typesafe/jev-1.13`) estimates the probability it is a genuine change. Suspicious prices are held as *pending* and only accepted if the next check sees the same price again
 5. **Updates database** - Saves new prices and adds to history if changed
 6. **Sends email alerts** - Looks up the user's email in Clerk and notifies them (Brevo, falling back to Resend) when the price drops
@@ -230,18 +233,21 @@ dealdrop/
 ├── components/
 │   ├── ui/                             # shadcn/ui components
 │   ├── AddProductForm.js               # Product URL input (opens Clerk sign-in)
-│   ├── ProductCard.js                  # Product display with chart toggle
+│   ├── CurrencySelect.js               # Preferred currency picker
+│   ├── ProductCard.js                  # Product with all its shops, cheapest first, add-shop form
 │   ├── PriceChart.js                   # Recharts price history
 │   └── AuthButton.js                   # Clerk sign in / sign out button
 ├── lib/
 │   ├── db.js                           # Neon serverless client
+│   ├── currency.js                     # Daily exchange rates (cached in Neon) + conversion
+│   ├── format.js                       # Price formatting
 │   ├── firecrawl.js                    # Firecrawl API integration
 │   ├── jev.js                          # Jev client (OpenRouter Decisions API)
 │   ├── price-guard.js                  # Bad-price guard using Jev
 │   ├── email.js                        # Email template + Brevo/Resend fallback
 │   └── utils.js                        # Utility functions
 ├── neon/
-│   └── schema.sql                      # Database tables & indexes
+│   └── schema.sql                      # products, listings, price_history, user_settings, exchange_rates
 ├── proxy.js                            # Clerk middleware (Next.js 16 proxy)
 ├── vercel.json                         # Vercel Cron schedule
 └── .env.local                          # Environment variables
@@ -259,7 +265,7 @@ curl https://your-app.vercel.app/api/cron/check-prices \
 ### Inspect data in Neon
 
 ```sql
-SELECT * FROM products ORDER BY updated_at DESC LIMIT 10;
+SELECT p.name, l.shop, l.current_price, l.currency FROM products p JOIN listings l ON l.product_id = p.id;
 SELECT * FROM price_history ORDER BY checked_at DESC LIMIT 10;
 ```
 

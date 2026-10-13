@@ -13,13 +13,13 @@ import {
 import { getPriceHistory } from "@/app/actions";
 import { Loader2 } from "lucide-react";
 
-export default function PriceChart({ productId }) {
+export default function PriceChart({ listingId }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
-      const history = await getPriceHistory(productId);
+      const history = await getPriceHistory(listingId);
 
       const chartData = history.map((item) => ({
         date: new Date(item.checked_at).toLocaleDateString(),
@@ -31,7 +31,7 @@ export default function PriceChart({ productId }) {
     }
 
     loadData();
-  }, [productId]);
+  }, [listingId]);
 
   if (loading) {
     return (
