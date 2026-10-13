@@ -1,0 +1,10 @@
+[
+  { "id": "casio-a159w", "category": "watches", "name": "Casio A159W-N1 Vintage Silver Digital Watch", "country": "lk", "location": "Sri Lanka" },
+  { "id": "seiko-srpd55", "category": "watches", "name": "Seiko 5 Sports SRPD55 Automatic Black Dial Watch", "country": "us", "location": "United States" },
+  { "id": "galaxy-a55", "category": "phones", "name": "Samsung Galaxy A55 5G 128GB Awesome Navy", "country": "lk", "location": "Sri Lanka" },
+  { "id": "iphone-15", "category": "phones", "name": "Apple iPhone 15 128GB Black", "country": "us", "location": "United States" },
+  { "id": "sony-xm5", "category": "headphones", "name": "Sony WH-1000XM5 Wireless Noise Canceling Headphones Black", "country": "us", "location": "United States" },
+  { "id": "airpods-pro2-usbc", "category": "headphones", "name": "Apple AirPods Pro 2 with MagSafe Charging Case (USB-C)", "country": "gb", "location": "United Kingdom" },
+  { "id": "nike-af1-white", "category": "shoes", "name": "Nike Air Force 1 '07 Men's Shoes White/White", "country": "us", "location": "United States" },
+  { "id": "adidas-samba-og", "category": "shoes", "name": "Adidas Samba OG Shoes Cloud White / Core Black", "country": "gb", "location": "United Kingdom" }
+]

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
 import { sql } from "@/lib/db";
-import { scrapeProduct } from "@/lib/firecrawl";
+import { scrapeProducts } from "@/lib/firecrawl";
 import { sendPriceDropAlert } from "@/lib/email";
 import { checkPriceChange } from "@/lib/price-guard";
 
@@ -39,17 +39,28 @@ async function handler(request) {
       priceChanges: 0,
       alertsSent: 0,
       flagged: 0,
+      failedReasons: {},
     };
+
+    // One batch job for every page (shared URLs are read once); Firecrawl queues
+    // the reads for free slots instead of rejecting them.
+    const uniqueUrls = [...new Set(listings.map((l) => l.url))];
+    const reads = new Map(
+      (await scrapeProducts(uniqueUrls)).map((read) => [read.url, read])
+    );
 
     for (const listing of listings) {
       try {
-        const productData = await scrapeProduct(listing.url);
+        const read = reads.get(listing.url);
 
-        if (!productData.currentPrice) {
+        if (!read?.ok) {
+          const reason = read?.reason ?? "failed";
+          results.failedReasons[reason] = (results.failedReasons[reason] ?? 0) + 1;
           results.failed++;
           continue;
         }
 
+        const productData = read.data;
         const newPrice = parseFloat(productData.currentPrice);
         const oldPrice = listing.current_price;
         const currency = productData.currencyCode || listing.currency;
