@@ -10,6 +10,7 @@
 //   embeddings      cosine similarity, openai/text-embedding-3-small (threshold tuned)
 //   llm-judge       Gemini 2.5 Flash-Lite answers YES/NO (no tuning)
 //   jev             TypeSafe Jev noul probability, 0.5  (no tuning)
+//   cascade         model-number first (free); Jev only decides when codes match
 //
 // Tuned thresholds use leave-one-product-out: for each product, the threshold is
 // chosen on the other 7 products and applied to the held-out one, so no method is
@@ -19,12 +20,13 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { decide, JEV_MODEL } from "../lib/jev.js";
 import { generateText, DEFAULT_MODEL } from "../lib/llm.js";
+import { SAME_PRODUCT } from "../lib/discover.js";
 
 const data = (f) => new URL(`./data/${f}`, import.meta.url);
 const EMBEDDING_MODEL = "openai/text-embedding-3-small";
 
-const SAME_RULE =
-  "Same brand, model and variant (color, size, capacity). Regional, retailer or packaging suffixes on the same model number and different listing wording do not make it a different product. A different model number, variant, color, storage or capacity, an accessory or part, or a bundle/multi-pack is NOT the same product.";
+// Same definition the production search uses (lib/discover.js).
+const SAME_RULE = `Same product: ${SAME_PRODUCT.true} NOT the same product: ${SAME_PRODUCT.false}`;
 
 // ---------- data ----------
 const pairs = JSON.parse(await readFile(data("pairs.json"), "utf8"));
@@ -110,7 +112,7 @@ async function jevScores(items) {
       Object.fromEntries(idx.map((_, k) => [`c${k}`, {
         type: "noul",
         instructions: `Is candidate c${k} exactly the same product as the tracked product?`,
-        criteria: { true: "Exactly the same product and variant (regional/packaging suffixes allowed).", false: SAME_RULE },
+        criteria: SAME_PRODUCT,
       }])),
       "eval_jev"
     );
@@ -194,6 +196,10 @@ const add = (name, scores, { preds, probabilistic, cost = 0, ms = 0, calls = 0, 
   console.log(`${name.padEnd(14)} acc=${results[name].accuracy.toFixed(3)} f1=${results[name].f1.toFixed(3)}`);
 };
 
+// Class balance matters: a method that always answers "same" sets the accuracy floor.
+const always = labeled.map(() => 1);
+add("always-same", always, { preds: always.map(Boolean), threshold: "baseline" });
+
 const jac = labeled.map(tokenJaccard);
 const jacCv = cvPredictions(labeled, jac);
 add("token-jaccard", jac, { preds: jacCv.preds, threshold: `${jacCv.meanThreshold.toFixed(2)} (LOPO-tuned)` });
@@ -210,6 +216,12 @@ add("llm-judge", llm.scores, { preds: llm.scores.map(Boolean), cost: llm.cost, m
 
 const jev = await jevScores(labeled);
 add("jev", jev.scores, { preds: jev.scores.map((s) => s >= 0.5), probabilistic: true, cost: jev.cost, ms: jev.ms, calls: jev.calls, threshold: "0.5" });
+
+// Cascade: the free model-code rule rejects mismatched codes; Jev judges the rest
+// (it can see color/variant words the code rule ignores).
+const cascadeProbs = labeled.map((p, i) => (mn[i] ? jev.scores[i] : 0));
+const jevCallsSaved = mn.filter((m) => !m).length;
+add("cascade", cascadeProbs, { preds: cascadeProbs.map((s) => s >= 0.5), probabilistic: true, cost: jev.cost * (1 - jevCallsSaved / labeled.length), ms: jev.ms, calls: jev.calls, threshold: "code rule, then Jev 0.5" });
 
 await writeFile(data("results.json"), JSON.stringify({
   generatedAt: new Date().toISOString(),
@@ -238,6 +250,8 @@ _Generated ${new Date().toISOString().slice(0, 10)} by \`eval/run.mjs\`._
 |---|---|---|---|---|---|---|---|
 ${Object.keys(results).map(row).join("\n")}
 
+- **always-same** is the floor: ${pct(results["always-same"].accuracy)} of pairs are "same", so accuracy alone flatters every method. Precision (how often a "same" verdict is right) and F1/AUC are the fairer comparison.
+- ${pairs.length - labeled.length} pairs were labeled **unclear** (the text omits the deciding variant) and are excluded.
 - **AUC** is threshold-free: the chance a random "same" pair scores higher than a random "not same" pair. Binary methods (model-number, llm-judge) have a lower ceiling here.
 - **token-jaccard** and **embeddings** thresholds were tuned leave-one-product-out (mean thresholds: ${results["token-jaccard"].threshold}, ${results.embeddings.threshold}); **llm-judge** and **jev** use no tuning.
 - **Jev** latency is per request; one request scores every candidate for a product (${results.jev.calls} requests total). LLM latency is per pair (${results["llm-judge"].calls} requests).

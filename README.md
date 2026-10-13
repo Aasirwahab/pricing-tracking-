@@ -242,6 +242,24 @@ Firecrawl solves the hard problems of web scraping:
 
 No need to maintain brittle, site-specific scrapers!
 
+## 📏 Evaluation: is it really the same product?
+
+"Find best prices" is only useful if the shops it shows sell the **exact** same product (model, color, storage).
+That decision is measured on real search results in [`eval/`](eval/):
+
+- **Data:** 8 real searches across watches, phones, headphones, and shoes, giving 80 candidate listings. Human-reviewed labels ([`eval/LABELS.md`](eval/LABELS.md)); 52 scored pairs, 28 excluded as genuinely unclear
+- **Methods compared:** always-same baseline, word overlap, model-number rule, embeddings, an LLM judge, and Jev
+- **Fair tuning:** thresholds for the similarity methods are tuned leave-one-product-out; the LLM and Jev get no tuning
+
+| Method | Precision | Recall | AUC | Cost / 1k pairs | Requests for 52 pairs |
+|---|---|---|---|---|---|
+| Always "same" (baseline) | 78.8% | 100% | 0.500 | $0 | 0 |
+| Model-number rule | 87.2% | 100% | 0.727 | $0 | 0 |
+| Embeddings (text-embedding-3-small) | 80.4% | 90.2% | 0.863 | $0.0003 | 1 |
+| LLM judge (Gemini 2.5 Flash-Lite) | 92.5% | 90.2% | 0.815 | $0.0198 | 52 |
+| **Jev (TypeSafe)** | **94.9%** | 90.2% | **0.961** | $0.0101 | **8** |
+
+What the iteration taught ([`eval/ITERATIONS.md`](eval/ITERATIONS.md)): the first run's biggest errors came from a **spec mismatch**, not weak models. The labeling rules said "refurbished is still the same product" and "a category page is not a product", but the model instructions never said so. One shared definition used by both production and the eval took Jev from 88.9% to 94.9% precision and cut its calibration error (Brier) from 0.145 to 0.085. Caveats: 52 pairs is small, and a fresh held-out set is planned to confirm v2.
 ## 📁 Project Structure
 
 ```
@@ -278,6 +296,7 @@ dealdrop/
 │   ├── price-guard.js                  # Bad-price guard using Jev
 │   ├── email.js                        # Email template + Brevo/Resend fallback
 │   └── utils.js                        # Utility functions
+├── eval/                               # Matching eval: collect, label, compare methods
 ├── neon/
 │   └── schema.sql                      # products, listings, price_history, user_settings, exchange_rates
 ├── proxy.js                            # Clerk middleware (Next.js 16 proxy)
