@@ -12,6 +12,9 @@ create table products (
   image_url text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  -- A price the guard flagged as suspicious; accepted if seen again on the next check
+  pending_price numeric(10,2),
+  pending_currency text,
   constraint products_user_url_unique unique (user_id, url)
 );
 

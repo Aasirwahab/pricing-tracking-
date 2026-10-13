@@ -11,6 +11,7 @@ Track product prices across e-commerce sites and get alerts on price drops. Buil
 - 📊 **Price History Charts** - Interactive graphs showing price trends over time
 - 🔐 **Google Authentication** - Secure sign-in powered by Clerk
 - 🔄 **Automated Daily Checks** - Vercel Cron checks prices automatically
+- 🛡️ **Bad-Price Guard** - The Jev decision model flags suspicious price jumps (wrong product, missing digit, currency mix-up) before they are saved or alerted
 - 📧 **Email Alerts** - Get notified when prices drop (Brevo, with Resend as fallback)
 
 ## 🛠️ Tech Stack
@@ -25,6 +26,7 @@ Track product prices across e-commerce sites and get alerts on price drops. Buil
   - Free tier is not paused after a week of inactivity
   - Scales to zero when idle, wakes on the next query
   - Accessed with `@neondatabase/serverless`
+- **Jev (TypeSafe) via OpenRouter** - Decision model for the bad-price guard (~0.6s, ~$0.00002 per check)
 - **Clerk** - Authentication (Google sign-in, sessions, user management)
 - **Vercel Cron** - Scheduled daily price checks
 - **Brevo + Resend** - Transactional emails (Brevo first, Resend fallback)
@@ -110,6 +112,9 @@ CLERK_SECRET_KEY=your_clerk_secret_key
 # Firecrawl
 FIRECRAWL_API_KEY=your_firecrawl_api_key
 
+# OpenRouter (Jev decision model for the bad-price guard; optional)
+OPENROUTER_API_KEY=your_openrouter_api_key
+
 # Brevo (primary email provider)
 BREVO_API_KEY=your_brevo_api_key
 SENDER_EMAIL=your_verified_sender@example.com
@@ -161,6 +166,7 @@ Open [http://localhost:3000](http://localhost:3000)
    - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
    - `CLERK_SECRET_KEY`
    - `FIRECRAWL_API_KEY`
+   - `OPENROUTER_API_KEY`
    - `BREVO_API_KEY` and `SENDER_EMAIL`
    - `RESEND_API_KEY`
    - `RESEND_FROM_EMAIL`
@@ -192,8 +198,9 @@ Open [http://localhost:3000](http://localhost:3000)
 1. **Vercel Cron** - Runs daily at 9 AM UTC (`vercel.json`)
 2. **Hits the API endpoint** - `GET /api/cron/check-prices`, authenticated with `CRON_SECRET`
 3. **Firecrawl scrapes all products** - Updates prices for all tracked products
-4. **Updates database** - Saves new prices and adds to history if changed
-5. **Sends email alerts** - Looks up the user's email in Clerk and notifies them (Brevo, falling back to Resend) when the price drops
+4. **Bad-price guard** - If a price moves 25%+ or changes currency, Jev (`typesafe/jev-1.13`) estimates the probability it is a genuine change. Suspicious prices are held as *pending* and only accepted if the next check sees the same price again
+5. **Updates database** - Saves new prices and adds to history if changed
+6. **Sends email alerts** - Looks up the user's email in Clerk and notifies them (Brevo, falling back to Resend) when the price drops
 
 ### Why Firecrawl?
 
@@ -229,6 +236,8 @@ dealdrop/
 ├── lib/
 │   ├── db.js                           # Neon serverless client
 │   ├── firecrawl.js                    # Firecrawl API integration
+│   ├── jev.js                          # Jev client (OpenRouter Decisions API)
+│   ├── price-guard.js                  # Bad-price guard using Jev
 │   ├── email.js                        # Email template + Brevo/Resend fallback
 │   └── utils.js                        # Utility functions
 ├── neon/

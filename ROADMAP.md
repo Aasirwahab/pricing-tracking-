@@ -24,7 +24,7 @@ It also tracks prices over time and alerts you when to buy.
 | v0.2 | Foundation | Migrate to Neon + Clerk + pnpm + Vercel Cron | ✅ Done |
 | v0.3 | Go live | API keys, deploy to Vercel, verify cron + email with a real product | 🚧 In progress |
 | v0.4 | Data model + currency | Product → many listings; original price + currency; exchange-rate layer; preferred currency | ⏳ |
-| v0.5 | AI foundation | Model-swappable LLM layer; validated structured extraction; bad-price guard; cost/latency logging | ⏳ |
+| v0.5 | AI foundation | Model-swappable LLM layer; validated structured extraction; ~~bad-price guard~~ ✅ (Jev, confirm-on-second-sighting); cost/latency logging | 🚧 Started |
 | v0.6 | Matching + eval | Labeled dataset (4-5 categories); string vs embeddings vs LLM; model benchmark; cascade | ⏳ |
 | v0.7 | Search + compare UI | Search → find listings → match → price table (original + converted), trust score, buy links | ⏳ |
 | v0.8 | Production hardening | Tests, CI with eval, caching, rate limiting, error monitoring | ⏳ |
