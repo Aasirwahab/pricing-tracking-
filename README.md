@@ -3,6 +3,8 @@
 
 Track product prices across e-commerce sites and get alerts on price drops. Built with Next.js, Firecrawl, Neon, and Clerk.
 
+> 🗺️ This project is evolving into an AI price comparison tool for any product, website, and currency. See the [Roadmap](ROADMAP.md).
+
 ## 🎯 Features
 
 - 🔍 **Track Any Product** - Works with Amazon, Zara, Walmart, and more
@@ -85,7 +87,7 @@ The schema creates two tables:
 
 ### 6. Environment Variables
 
-Create `.env.local` in the root directory:
+Copy [`.env.example`](.env.example) to `.env.local` and fill in the values:
 
 ```env
 # Neon
