@@ -21,6 +21,8 @@ create table listings (
   name text not null,
   current_price numeric(10,2) not null,
   currency text not null,
+  -- new | refurbished | used (extracted from the page)
+  condition text not null default 'new',
   image_url text,
   -- A price the guard flagged as suspicious; accepted if seen again on the next check
   pending_price numeric(10,2),

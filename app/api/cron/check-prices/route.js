@@ -100,6 +100,7 @@ async function handler(request) {
           update listings set
             current_price = ${newPrice},
             currency = ${currency},
+            condition = ${productData.condition},
             name = ${productData.productName || listing.name},
             image_url = ${productData.productImageUrl || listing.image_url},
             pending_price = null,

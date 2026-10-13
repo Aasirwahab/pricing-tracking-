@@ -6,6 +6,7 @@ import { formatPrice } from "@/lib/format";
 import PriceChart from "./PriceChart";
 import PriceAnalysis from "./PriceAnalysis";
 import FindShops from "./FindShops";
+import ConditionBadge from "./ConditionBadge";
 import {
   Card,
   CardContent,
@@ -144,6 +145,7 @@ export default function ProductCard({ product, currency, shopCountry }) {
                       <span className="font-medium text-gray-900 truncate">
                         {listing.shop}
                       </span>
+                      <ConditionBadge condition={listing.condition} />
                       {index === 0 && shopCount > 1 && (
                         <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
                           Cheapest

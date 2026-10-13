@@ -5,6 +5,7 @@ import { findShops, trackShop } from "@/app/actions";
 import { formatPrice } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import ConditionBadge from "./ConditionBadge";
 import { Check, ExternalLink, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -15,6 +16,8 @@ export default function FindShops({ productId, currency, shopCountry }) {
   const key = `${productId}|${currency}|${shopCountry}`;
   const [fetched, setFetched] = useState(null);
   const [trackingUrl, setTrackingUrl] = useState(null);
+  // New and refurbished/used prices aren't comparable, so new-only is the default.
+  const [includeUsed, setIncludeUsed] = useState(false);
   const result = fetched?.key === key ? fetched.data : null;
 
   useEffect(() => {
@@ -56,6 +59,7 @@ export default function FindShops({ productId, currency, shopCountry }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium text-gray-900 truncate">{s.shop}</span>
+          <ConditionBadge condition={s.condition} />
           <Badge variant="outline" className="border-transparent bg-gray-100 text-gray-600">
             {Math.round(s.matchP * 100)}% match
           </Badge>
@@ -120,8 +124,15 @@ export default function FindShops({ productId, currency, shopCountry }) {
     return <p className="py-2 text-sm text-gray-500">{result.error}</p>;
   }
 
-  const { shops, internationalShops, country, searchedAt } = result;
+  const { country, searchedAt, limits } = result;
   const isWorldwide = country === "Worldwide";
+  const visible = (list, limit) =>
+    list.filter((s) => includeUsed || s.condition === "new").slice(0, limit);
+  const shops = visible(result.shops, limits.local);
+  const internationalShops = visible(result.internationalShops, limits.international);
+  const notNewCount = [...result.shops, ...result.internationalShops].filter(
+    (s) => s.condition !== "new"
+  ).length;
 
   return (
     <div className="space-y-2 rounded-md border bg-orange-50/40 p-3">
@@ -133,6 +144,18 @@ export default function FindShops({ productId, currency, shopCountry }) {
           searched {new Date(searchedAt).toLocaleDateString("en-US")}
         </span>
       </div>
+
+      {notNewCount > 0 && (
+        <label className="flex items-center gap-2 text-sm text-gray-600">
+          <input
+            type="checkbox"
+            checked={includeUsed}
+            onChange={(e) => setIncludeUsed(e.target.checked)}
+            className="h-4 w-4 accent-orange-500"
+          />
+          Include refurbished &amp; used ({notNewCount})
+        </label>
+      )}
 
       {shops.length === 0 ? (
         <p className="text-sm text-gray-500">

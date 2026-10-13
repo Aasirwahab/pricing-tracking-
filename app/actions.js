@@ -72,6 +72,7 @@ export async function addProduct(formData) {
           name = ${productData.productName},
           current_price = ${newPrice},
           currency = ${currency},
+          condition = ${productData.condition},
           image_url = ${productData.productImageUrl},
           updated_at = now()
         where id = ${existing.id}
@@ -79,9 +80,9 @@ export async function addProduct(formData) {
       listingId = existing.id;
     } else if (productId) {
       const [listing] = await sql`
-        insert into listings (product_id, url, shop, name, current_price, currency, image_url)
+        insert into listings (product_id, url, shop, name, current_price, currency, condition, image_url)
         values (${productId}, ${url}, ${shopFromUrl(url)}, ${productData.productName},
-          ${newPrice}, ${currency}, ${productData.productImageUrl})
+          ${newPrice}, ${currency}, ${productData.condition}, ${productData.productImageUrl})
         returning id
       `;
       listingId = listing.id;
@@ -93,9 +94,9 @@ export async function addProduct(formData) {
           values (${userId}, ${productData.productName}, ${productData.productImageUrl})
           returning id
         )
-        insert into listings (product_id, url, shop, name, current_price, currency, image_url)
+        insert into listings (product_id, url, shop, name, current_price, currency, condition, image_url)
         select id, ${url}, ${shopFromUrl(url)}, ${productData.productName},
-          ${newPrice}, ${currency}, ${productData.productImageUrl}
+          ${newPrice}, ${currency}, ${productData.condition}, ${productData.productImageUrl}
         from new_product
         returning id
       `;
@@ -194,6 +195,7 @@ export async function getProducts() {
               'name', l.name,
               'current_price', l.current_price::float8,
               'currency', l.currency,
+              'condition', l.condition,
               'updated_at', l.updated_at
             ) order by l.created_at
           ) filter (where l.id is not null),
@@ -341,6 +343,8 @@ export async function findShops(productId) {
         name: c.name,
         price: c.price,
         currency: c.currency,
+        // Searches saved before condition existed count as new
+        condition: c.condition ?? "new",
         matchP: c.matchP,
         converted_price: convert(c.price, c.currency, currency, fx?.rates),
         tracked: tracked.has(c.url),
@@ -353,15 +357,16 @@ export async function findShops(productId) {
 
     // Shops abroad may not deliver, and their price excludes shipping and import
     // duty, so they are listed separately instead of competing with local shops.
-    const shops = matches.filter((s) => s.local).slice(0, TOP_SHOPS);
-    const internationalShops = matches
-      .filter((s) => !s.local)
-      .slice(0, TOP_INTERNATIONAL_SHOPS);
+    // The browser filters by condition (new only, or including refurbished/used)
+    // and then shows the first TOP_SHOPS / TOP_INTERNATIONAL_SHOPS.
+    const shops = matches.filter((s) => s.local);
+    const internationalShops = matches.filter((s) => !s.local);
 
     return {
       discoveryId: discovery.id,
       shops,
       internationalShops,
+      limits: { local: TOP_SHOPS, international: TOP_INTERNATIONAL_SHOPS },
       currency,
       country: country.name,
       searchedAt: discovery.created_at,
@@ -397,9 +402,9 @@ export async function trackShop(discoveryId, url) {
     }
 
     const [listing] = await sql`
-      insert into listings (product_id, url, shop, name, current_price, currency, image_url)
+      insert into listings (product_id, url, shop, name, current_price, currency, condition, image_url)
       values (${discovery.product_id}, ${shop.url}, ${shop.shop}, ${shop.name},
-        ${shop.price}, ${shop.currency}, ${shop.image_url})
+        ${shop.price}, ${shop.currency}, ${shop.condition ?? "new"}, ${shop.image_url})
       on conflict (product_id, url) do nothing
       returning id
     `;
