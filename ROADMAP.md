@@ -44,8 +44,8 @@ Screenshot  ──→ vision model identifies the product┘
 |---|---|---|---|
 | v0.2 | Foundation | Migrate to Neon + Clerk + pnpm + Vercel Cron | ✅ Done |
 | v0.3 | Go live | API keys ✅, local end-to-end test ✅, Brevo email + Resend fallback ✅; remaining: test alert email, deploy to Vercel | 🚧 Deploy pending |
-| v0.4 | Data model + currency | Product → many shop listings; original price + currency per listing; daily exchange rates (open.er-api.com, 166 currencies); user's preferred currency; add another shop to a product | 🚧 In progress |
-| v0.5 | Pricing analysis + AI foundation | Per-product pricing analysis (computed stats + LLM explanation); ~~bad-price guard~~ ✅ (Jev, confirm-on-second-sighting); model-swappable LLM layer; validated extraction; cost/latency logging | 🚧 Guard done |
+| v0.4 | Data model + currency | Product → many shop listings; original price + currency per listing; daily exchange rates (open.er-api.com, 166 currencies); user's preferred currency; add another shop to a product | ✅ Done |
+| v0.5 | Pricing analysis + AI foundation | Pricing analysis (daily best-price series, verdict in code) ✅; LLM summary with hallucination check + cache ✅; bad-price guard (Jev) ✅; swappable LLM layer ✅; scrape validation ✅; `ai_calls` cost/latency log ✅ | ✅ Done |
 | v0.6 | Matching + eval | Labeled dataset (4-5 categories); string vs embeddings vs LLM vs Jev; calibration; model benchmark; cascade | ⏳ |
 | v0.7 | Add by link, name, or screenshot | Name search and screenshot identification (vision model via OpenRouter) → find shops → match → compare; screenshot-accuracy eval | ⏳ |
 | v0.8 | Production hardening | Tests, CI with eval, caching, rate limiting, error monitoring | ⏳ |

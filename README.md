@@ -13,6 +13,7 @@ Track product prices across e-commerce sites and get alerts on price drops. Buil
 - 📊 **Price History Charts** - Interactive graphs showing price trends over time
 - 🔐 **Google Authentication** - Secure sign-in powered by Clerk
 - 🔄 **Automated Daily Checks** - Vercel Cron checks prices automatically
+- 📊 **Pricing Analysis** - Cheapest vs priciest shop, lowest price seen, 30-day average, 7-day trend, and a verdict (great / good / typical / high), plus a short AI-written summary
 - 🛡️ **Bad-Price Guard** - The Jev decision model flags suspicious price jumps (wrong product, missing digit, currency mix-up) before they are saved or alerted
 - 📧 **Email Alerts** - Get notified when prices drop (Brevo, with Resend as fallback)
 
@@ -28,6 +29,7 @@ Track product prices across e-commerce sites and get alerts on price drops. Buil
   - Free tier is not paused after a week of inactivity
   - Scales to zero when idle, wakes on the next query
   - Accessed with `@neondatabase/serverless`
+- **Gemini 2.5 Flash-Lite via OpenRouter** - Writes the pricing summary from computed numbers (~$0.00004 per summary, cached)
 - **Jev (TypeSafe) via OpenRouter** - Decision model for the bad-price guard (~0.6s, ~$0.00002 per check)
 - **Clerk** - Authentication (Google sign-in, sessions, user management)
 - **Vercel Cron** - Scheduled daily price checks
@@ -195,6 +197,7 @@ Open [http://localhost:3000](http://localhost:3000)
 3. **Data stored** - A product with one listing per shop is saved to Neon, scoped to the Clerk user
 4. **Currency conversion** - Daily USD-based rates from open.er-api.com are cached in Neon once a day; each listing shows its original price and its price in the user's preferred currency
 5. **View tracking** - See every shop's price, the cheapest one, and a price history chart per shop
+6. **Price analysis** - Stats are computed in code (see below); an LLM only rephrases them into 1-2 sentences
 
 ### Automated Price Checking
 
@@ -204,6 +207,15 @@ Open [http://localhost:3000](http://localhost:3000)
 4. **Bad-price guard** - If a price moves 25%+ or changes currency, Jev (`typesafe/jev-1.13`) estimates the probability it is a genuine change. Suspicious prices are held as *pending* and only accepted if the next check sees the same price again
 5. **Updates database** - Saves new prices and adds to history if changed
 6. **Sends email alerts** - Looks up the user's email in Clerk and notifies them (Brevo, falling back to Resend) when the price drops
+
+### Pricing Analysis: How It Works
+
+1. **Daily best-price series**: `price_history` only stores a row when a price changes, so a plain average of rows over-weights shops whose price changes often. The analysis rebuilds one value per day: the lowest price available across all shops, carrying each shop's last price forward. In a test where one shop flips between $100 and $104 daily and another stays at $90, the naive average is $101.36 while the true best-price average is $90.00.
+2. **Same currency**: history is converted at today's rates, so exchange-rate moves don't look like price moves.
+3. **Verdict in code**: *great* (within 1% of the lowest seen), *good* / *high* (5%+ below / above the 30-day average), *typical*, or *not enough history* (under 7 days).
+4. **LLM summary, guarded**: the LLM receives only pre-formatted facts. A **hallucination check** rejects any summary containing a number that isn't in the facts and falls back to a template sentence.
+5. **Cached**: summaries are cached by a hash of the facts, model, and prompt, so the LLM only runs when the numbers change.
+6. **Measured**: every Jev and LLM call is logged to `ai_calls` (model, latency, tokens, cost, success).
 
 ### Why Firecrawl?
 
@@ -242,6 +254,10 @@ dealdrop/
 │   ├── currency.js                     # Daily exchange rates (cached in Neon) + conversion
 │   ├── format.js                       # Price formatting
 │   ├── firecrawl.js                    # Firecrawl API integration
+│   ├── analysis.js                     # Pricing analysis maths + LLM facts + hallucination check
+│   ├── insights.js                     # Cached LLM summary of the analysis
+│   ├── llm.js                          # Swappable LLM client (OpenRouter chat API)
+│   ├── ai-log.js                       # Logs model, latency, tokens, cost for every AI call
 │   ├── jev.js                          # Jev client (OpenRouter Decisions API)
 │   ├── price-guard.js                  # Bad-price guard using Jev
 │   ├── email.js                        # Email template + Brevo/Resend fallback

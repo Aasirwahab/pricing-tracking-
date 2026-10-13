@@ -4,6 +4,7 @@ import { useState } from "react";
 import { addProduct, deleteListing, deleteProduct } from "@/app/actions";
 import { formatPrice } from "@/lib/format";
 import PriceChart from "./PriceChart";
+import PriceAnalysis from "./PriceAnalysis";
 import {
   Card,
   CardContent,
@@ -21,6 +22,7 @@ import {
   X,
   Plus,
   Loader2,
+  BarChart3,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -31,6 +33,7 @@ export default function ProductCard({ product, currency }) {
   const [deleting, setDeleting] = useState(false);
   const [shopUrl, setShopUrl] = useState("");
   const [addingShop, setAddingShop] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(false);
 
   const cheapest = product.listings[0];
   const shopCount = product.listings.length;
@@ -113,6 +116,10 @@ export default function ProductCard({ product, currency }) {
       </CardHeader>
 
       <CardContent className="space-y-3">
+        {showAnalysis && (
+          <PriceAnalysis productId={product.id} currency={currency} />
+        )}
+
         <ul className="divide-y rounded-md border">
           {product.listings.map((listing, index) => {
             const sameCurrency = listing.currency === currency;
@@ -213,7 +220,17 @@ export default function ProductCard({ product, currency }) {
         </form>
       </CardContent>
 
-      <CardFooter className="pt-0">
+      <CardFooter className="pt-0 flex justify-between gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowAnalysis(!showAnalysis)}
+          className="gap-1"
+        >
+          <BarChart3 className="w-4 h-4" />
+          {showAnalysis ? "Hide analysis" : "Price analysis"}
+        </Button>
+
         <Button
           variant="ghost"
           size="sm"

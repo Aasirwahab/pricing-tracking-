@@ -4,6 +4,8 @@ import { auth } from "@clerk/nextjs/server";
 import { sql } from "@/lib/db";
 import { scrapeProduct } from "@/lib/firecrawl";
 import { getRates } from "@/lib/currency";
+import { analyzePrices } from "@/lib/analysis";
+import { getInsight } from "@/lib/insights";
 import { revalidatePath } from "next/cache";
 
 function shopFromUrl(url) {
@@ -221,6 +223,53 @@ export async function getPriceHistory(listingId) {
   } catch (error) {
     console.error("Get price history error:", error);
     return [];
+  }
+}
+
+// Pricing analysis for one product: stats computed in code, then a short
+// LLM-written summary of those stats (or a template if the LLM is unavailable).
+export async function getPriceAnalysis(productId) {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { error: "Not authenticated" };
+    }
+
+    const [listings, history, currency, fx] = await Promise.all([
+      sql`
+        select l.id, l.shop, l.current_price::float8 as current_price, l.currency
+        from listings l
+        join products p on p.id = l.product_id
+        where l.product_id = ${productId} and p.user_id = ${userId}
+      `,
+      sql`
+        select ph.listing_id, ph.price::float8 as price, ph.currency, ph.checked_at
+        from price_history ph
+        join listings l on l.id = ph.listing_id
+        join products p on p.id = l.product_id
+        where l.product_id = ${productId} and p.user_id = ${userId}
+      `,
+      getPreferredCurrency(),
+      getRates(),
+    ]);
+
+    const analysis = analyzePrices({
+      listings,
+      history,
+      currency,
+      rates: fx?.rates,
+    });
+
+    if (!analysis) {
+      return { error: "No prices with a known exchange rate to analyze" };
+    }
+
+    const insight = await getInsight(analysis);
+    return { analysis, ...insight };
+  } catch (error) {
+    console.error("Price analysis error:", error);
+    return { error: "Could not analyze prices right now" };
   }
 }
 
